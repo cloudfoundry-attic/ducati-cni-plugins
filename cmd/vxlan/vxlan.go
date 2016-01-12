@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
@@ -22,8 +21,6 @@ import (
 const (
 	vxlanPort    = 4789
 	vxlanVethMTU = 1450
-
-	databaseLocation = "/vagrant/cni_runtime/peers.json"
 )
 
 type NetConf struct {
@@ -31,14 +28,6 @@ type NetConf struct {
 	Network     string `json:"network"`
 	HostNetwork string `json:"host_network"`
 }
-
-type peer struct {
-	HostAddress      string
-	ContainerAddress string
-	LinkAddress      string
-}
-
-type peerDB map[string]peer
 
 func init() {
 	// this ensures that main runs only on main thread (thread group leader).
@@ -57,66 +46,6 @@ func loadConf(bytes []byte) (*NetConf, error) {
 	}
 
 	return n, nil
-}
-
-func loadPeers(location string) (peerDB, error) {
-	bytes, err := ioutil.ReadFile(location)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return peerDB{}, nil
-		}
-		return nil, err
-	}
-
-	n := peerDB{}
-	if err := json.Unmarshal(bytes, &n); err != nil {
-		return nil, fmt.Errorf("failed to load peer DB: %v", err)
-	}
-
-	return n, nil
-}
-
-func savePeers(location string, peers peerDB) error {
-	bytes, err := json.Marshal(peers)
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(location, bytes, os.FileMode(0644))
-}
-
-func findInterfaceAddress(cidr string) (string, error) {
-	_, network, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return "", err
-	}
-
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "", err
-	}
-
-	for _, addr := range addrs {
-		ip, _, err := net.ParseCIDR(addr.String())
-		if err != nil {
-			return "", err
-		}
-
-		if network.Contains(ip) {
-			return ip.String(), nil
-		}
-	}
-
-	return "", nil
-}
-
-func renameLink(curName, newName string) error {
-	link, err := netlink.LinkByName(curName)
-	if err != nil {
-		return err
-	}
-
-	return netlink.LinkSetName(link, newName)
 }
 
 func createVxlan(vni int) (*netlink.Vxlan, error) {
@@ -265,11 +194,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	peers, err := loadPeers(databaseLocation)
-	if err != nil {
-		return err
-	}
-
 	netns, err := os.Open(args.Netns)
 	if err != nil {
 		return fmt.Errorf("failed to open netns %q: %v", netns, err)
@@ -313,21 +237,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return nil
 	})
 
-	hostAddress, err := findInterfaceAddress(netConf.HostNetwork)
-	if err != nil {
-		return err
-	}
-
-	peers[args.ContainerID] = peer{
-		HostAddress:      hostAddress,
-		ContainerAddress: result.IP4.IP.IP.String(),
-		LinkAddress:      containerHardwareAddr,
-	}
-
-	if err := savePeers(databaseLocation, peers); err != nil {
-		return err
-	}
-
 	return result.Print()
 }
 
@@ -336,13 +245,6 @@ func cmdDel(args *skel.CmdArgs) error {
 	if err != nil {
 		return err
 	}
-
-	peers, err := loadPeers(databaseLocation)
-	if err != nil {
-		return err
-	}
-
-	delete(peers, args.ContainerID)
 
 	err = ipam.ExecDel(n.IPAM.Type, args.StdinData)
 	if err != nil {
@@ -353,10 +255,6 @@ func cmdDel(args *skel.CmdArgs) error {
 	err = ns.WithNetNSPath(args.Netns, false, func(hostNS *os.File) error {
 		return ip.DelLinkByName(args.IfName)
 	})
-
-	if serr := savePeers(databaseLocation, peers); serr != nil {
-		return serr
-	}
 
 	return err
 }
