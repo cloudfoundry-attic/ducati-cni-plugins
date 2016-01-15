@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 
+	nlfakes "github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl/fakes"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth/fakes"
 	"github.com/vishvananda/netlink"
@@ -16,13 +17,13 @@ import (
 
 var _ = Describe("Veth", func() {
 	var (
-		netlinker *fakes.Netlinker
+		netlinker *nlfakes.Netlinker
 		namespace *fakes.Namespace
 		v         veth.Veth
 	)
 
 	BeforeEach(func() {
-		netlinker = &fakes.Netlinker{}
+		netlinker = &nlfakes.Netlinker{}
 		namespace = &fakes.Namespace{}
 		v = veth.Veth{
 			Netlinker: netlinker,
