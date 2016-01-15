@@ -4,25 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime"
+	"os"
 
 	"github.com/appc/cni/pkg/ipam"
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/overlay"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth"
 )
 
 type NetConf struct {
 	types.NetConf
-	Network     string `json:"network"`
+	Network     string `json:"network"` // IPNet
 	HostNetwork string `json:"host_network"`
-}
-
-func init() {
-	// this ensures that main runs only on main thread (thread group leader).
-	// since namespace ops (unshare, setns) are done for a single thread, we
-	// must ensure that the goroutine does not jump from OS thread to thread
-	runtime.LockOSThread()
 }
 
 func loadConf(bytes []byte) (*NetConf, error) {
@@ -39,6 +34,7 @@ func loadConf(bytes []byte) (*NetConf, error) {
 
 func cmdAdd(args *skel.CmdArgs) error {
 	const vni = 1
+
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
 		return err
@@ -49,20 +45,59 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err != nil {
 		return err
 	}
+
 	if ipamResult.IP4 == nil {
 		return errors.New("IPAM plugin returned missing IPv4 config")
 	}
 
-	overlayController := &overlay.Controller{
-		NetworkSandboxRepo: nil,
-		NamespaceRepo:      &overlay.NamespaceRepository{},
-	}
-	err = overlayController.Add(args.Netns, args.IfName, vni, ipamResult)
+	v := veth.Veth{Netlinker: nl.Netlink}
+
+	pair, err := v.CreatePair("host-name", "container-name")
 	if err != nil {
-		return fmt.Errorf("overlay controller failed: %s", err)
+		panic(err)
 	}
 
+	containerNS := bogusNamespace{path: args.Netns}
+	hostNS := bogusNamespace{path: "/proc/self/ns/net"}
+
+	err = pair.SetupContainer(containerNS)
+	if err != nil {
+		panic(err)
+	}
+
+	err = pair.SetupHost(hostNS)
+	if err != nil {
+		panic(err)
+	}
+
+	// TODO: implement sandbox that takes netlinker as well
+
+	//sanbox := sandbox.Sandbox{
+	//NetLinker:   nl.Netlink,
+	//VNI:         1,
+	//HostNetwork: netConf.HostNetwork,
+	//Network:     netConf.Network,
+	//}
+
+	//Sandbox, err := sandbox.Create()
+
+	//err := sandbox.Add(pair.Host)
+
 	return ipamResult.Print()
+}
+
+type bogusNamespace struct {
+	path string
+}
+
+func (bn bogusNamespace) Execute(callback func(file *os.File) error) error {
+	file, err := os.Open(bn.path)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	return callback(file)
 }
 
 func cmdDel(args *skel.CmdArgs) error {

@@ -9,11 +9,12 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
 	"github.com/appc/cni/pkg/ns"
 	"github.com/appc/cni/pkg/types"
-	. "github.com/onsi/ginkgo"
 	"github.com/onsi/ginkgo/config"
-	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
