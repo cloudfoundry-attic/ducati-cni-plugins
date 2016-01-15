@@ -6,16 +6,9 @@ import (
 	"net"
 	"os"
 
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl"
 	"github.com/vishvananda/netlink"
 )
-
-//go:generate counterfeiter --fake-name Netlinker . Netlinker
-type Netlinker interface {
-	LinkAdd(netlink.Link) error
-	LinkSetUp(netlink.Link) error
-	LinkByName(name string) (netlink.Link, error)
-	LinkSetNsFd(hostVeth netlink.Link, fd int) error
-}
 
 //go:generate counterfeiter --fake-name Namespace . Namespace
 type Namespace interface {
@@ -23,11 +16,11 @@ type Namespace interface {
 }
 
 type Veth struct {
-	Netlinker Netlinker
+	Netlinker nl.Netlinker
 }
 
 type Pair struct {
-	Netlinker Netlinker
+	Netlinker nl.Netlinker
 	Host      netlink.Link
 	Container netlink.Link
 }

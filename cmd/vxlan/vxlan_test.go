@@ -79,6 +79,9 @@ var _ = Describe("vxlan", func() {
 
 	AfterEach(func() {
 		removeNetworkNamespace(filepath.Base(namespacePath))
+		for _, name := range []string{"container-name", "host-name", "vxlan1", "vxlanbr1"} {
+			exec.Command("ip", "link", "del", name).Run()
+		}
 	})
 
 	It("creates a vxlan adapter in the host namespace", func() {
@@ -116,8 +119,20 @@ var _ = Describe("vxlan", func() {
 		var result types.Result
 		Expect(json.Unmarshal(session.Out.Contents(), &result)).To(Succeed())
 
+		output, _ := exec.Command("ls", "-l", "/proc/self/ns/net").CombinedOutput()
+		fmt.Printf("Parent:\n-----\n%s\n", output)
+
+		output, _ = exec.Command("ifconfig", "-a").CombinedOutput()
+		fmt.Printf("%s\n", output)
+
 		var containerAddr netlink.Addr
 		err := ns.WithNetNSPath(namespacePath, false, func(_ *os.File) error {
+			output, _ := exec.Command("ls", "-l", "/proc/self/ns/net").CombinedOutput()
+			fmt.Printf("%s\n", output)
+
+			output, _ = exec.Command("ifconfig", "-a").CombinedOutput()
+			fmt.Printf("%s\n", output)
+
 			l, err := netlink.LinkByName("vx-eth0")
 			if err != nil {
 				return err

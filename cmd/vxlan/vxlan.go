@@ -9,9 +9,11 @@ import (
 	"github.com/appc/cni/pkg/ipam"
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/overlay"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth"
+	"github.com/vishvananda/netlink"
 )
 
 type NetConf struct {
@@ -52,7 +54,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	v := veth.Veth{Netlinker: nl.Netlink}
 
-	pair, err := v.CreatePair("host-name", "container-name")
+	pair, err := v.CreatePair("host-name", args.IfName)
 	if err != nil {
 		panic(err)
 	}
@@ -70,6 +72,37 @@ func cmdAdd(args *skel.CmdArgs) error {
 		panic(err)
 	}
 
+	vxlanName := fmt.Sprintf("vxlan%d", vni)
+	linkFactory := &links.Factory{Netlinker: nl.Netlink}
+	vxlan, err := linkFactory.FindLink(vxlanName)
+	if err != nil {
+		vxlan, err = linkFactory.CreateVxlan(vxlanName, vni)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var bridge *netlink.Bridge
+	bridgeName := fmt.Sprintf("vxlanbr%d", vni)
+	link, err := linkFactory.FindLink(bridgeName)
+	if err != nil {
+		bridge, err = linkFactory.CreateBridge(bridgeName, ipamResult.IP4.Gateway)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		bridge = link.(*netlink.Bridge)
+	}
+
+	err = nl.Netlink.LinkSetMaster(vxlan, bridge)
+	if err != nil {
+		panic(err)
+	}
+
+	err = nl.Netlink.LinkSetMaster(pair.Host, bridge)
+	if err != nil {
+		panic(err)
+	}
 	// TODO: implement sandbox that takes netlinker as well
 
 	//sanbox := sandbox.Sandbox{

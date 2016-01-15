@@ -2,32 +2,30 @@ package nl
 
 import "github.com/vishvananda/netlink"
 
-type nl struct {
-	linkAdd     func(netlink.Link) error
-	linkSetUp   func(netlink.Link) error
-	linkByName  func(string) (netlink.Link, error)
-	linkSetNsFd func(netlink.Link, int) error
+type nl struct{}
+
+var Netlink = &nl{}
+
+func (*nl) LinkAdd(link netlink.Link) error {
+	return netlink.LinkAdd(link)
 }
 
-var Netlink = nl{
-	linkAdd:     netlink.LinkAdd,
-	linkSetUp:   netlink.LinkSetUp,
-	linkByName:  netlink.LinkByName,
-	linkSetNsFd: netlink.LinkSetNsFd,
+func (*nl) LinkSetUp(link netlink.Link) error {
+	return netlink.LinkSetUp(link)
 }
 
-func (n nl) LinkAdd(link netlink.Link) error {
-	return n.linkAdd(link)
+func (*nl) LinkByName(name string) (netlink.Link, error) {
+	return netlink.LinkByName(name)
 }
 
-func (n nl) LinkSetUp(link netlink.Link) error {
-	return n.linkSetUp(link)
+func (*nl) LinkSetNsFd(link netlink.Link, fd int) error {
+	return netlink.LinkSetNsFd(link, fd)
 }
 
-func (n nl) LinkByName(name string) (netlink.Link, error) {
-	return n.linkByName(name)
+func (*nl) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
+	return netlink.AddrAdd(link, addr)
 }
 
-func (n nl) LinkSetNsFd(link netlink.Link, fd int) error {
-	return n.linkSetNsFd(link, fd)
+func (*nl) LinkSetMaster(slave netlink.Link, master *netlink.Bridge) error {
+	return netlink.LinkSetMaster(slave, master)
 }

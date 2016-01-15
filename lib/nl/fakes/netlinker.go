@@ -4,23 +4,23 @@ package fakes
 import (
 	"sync"
 
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl"
 	"github.com/vishvananda/netlink"
 )
 
 type Netlinker struct {
-	LinkAddStub        func(netlink.Link) error
+	LinkAddStub        func(link netlink.Link) error
 	linkAddMutex       sync.RWMutex
 	linkAddArgsForCall []struct {
-		arg1 netlink.Link
+		link netlink.Link
 	}
 	linkAddReturns struct {
 		result1 error
 	}
-	LinkSetUpStub        func(netlink.Link) error
+	LinkSetUpStub        func(link netlink.Link) error
 	linkSetUpMutex       sync.RWMutex
 	linkSetUpArgsForCall []struct {
-		arg1 netlink.Link
+		link netlink.Link
 	}
 	linkSetUpReturns struct {
 		result1 error
@@ -34,25 +34,43 @@ type Netlinker struct {
 		result1 netlink.Link
 		result2 error
 	}
-	LinkSetNsFdStub        func(hostVeth netlink.Link, fd int) error
+	LinkSetNsFdStub        func(link netlink.Link, fd int) error
 	linkSetNsFdMutex       sync.RWMutex
 	linkSetNsFdArgsForCall []struct {
-		hostVeth netlink.Link
-		fd       int
+		link netlink.Link
+		fd   int
 	}
 	linkSetNsFdReturns struct {
 		result1 error
 	}
+	AddrAddStub        func(link netlink.Link, addr *netlink.Addr) error
+	addrAddMutex       sync.RWMutex
+	addrAddArgsForCall []struct {
+		link netlink.Link
+		addr *netlink.Addr
+	}
+	addrAddReturns struct {
+		result1 error
+	}
+	LinkSetMasterStub        func(slave netlink.Link, master *netlink.Bridge) error
+	linkSetMasterMutex       sync.RWMutex
+	linkSetMasterArgsForCall []struct {
+		slave  netlink.Link
+		master *netlink.Bridge
+	}
+	linkSetMasterReturns struct {
+		result1 error
+	}
 }
 
-func (fake *Netlinker) LinkAdd(arg1 netlink.Link) error {
+func (fake *Netlinker) LinkAdd(link netlink.Link) error {
 	fake.linkAddMutex.Lock()
 	fake.linkAddArgsForCall = append(fake.linkAddArgsForCall, struct {
-		arg1 netlink.Link
-	}{arg1})
+		link netlink.Link
+	}{link})
 	fake.linkAddMutex.Unlock()
 	if fake.LinkAddStub != nil {
-		return fake.LinkAddStub(arg1)
+		return fake.LinkAddStub(link)
 	} else {
 		return fake.linkAddReturns.result1
 	}
@@ -67,7 +85,7 @@ func (fake *Netlinker) LinkAddCallCount() int {
 func (fake *Netlinker) LinkAddArgsForCall(i int) netlink.Link {
 	fake.linkAddMutex.RLock()
 	defer fake.linkAddMutex.RUnlock()
-	return fake.linkAddArgsForCall[i].arg1
+	return fake.linkAddArgsForCall[i].link
 }
 
 func (fake *Netlinker) LinkAddReturns(result1 error) {
@@ -77,14 +95,14 @@ func (fake *Netlinker) LinkAddReturns(result1 error) {
 	}{result1}
 }
 
-func (fake *Netlinker) LinkSetUp(arg1 netlink.Link) error {
+func (fake *Netlinker) LinkSetUp(link netlink.Link) error {
 	fake.linkSetUpMutex.Lock()
 	fake.linkSetUpArgsForCall = append(fake.linkSetUpArgsForCall, struct {
-		arg1 netlink.Link
-	}{arg1})
+		link netlink.Link
+	}{link})
 	fake.linkSetUpMutex.Unlock()
 	if fake.LinkSetUpStub != nil {
-		return fake.LinkSetUpStub(arg1)
+		return fake.LinkSetUpStub(link)
 	} else {
 		return fake.linkSetUpReturns.result1
 	}
@@ -99,7 +117,7 @@ func (fake *Netlinker) LinkSetUpCallCount() int {
 func (fake *Netlinker) LinkSetUpArgsForCall(i int) netlink.Link {
 	fake.linkSetUpMutex.RLock()
 	defer fake.linkSetUpMutex.RUnlock()
-	return fake.linkSetUpArgsForCall[i].arg1
+	return fake.linkSetUpArgsForCall[i].link
 }
 
 func (fake *Netlinker) LinkSetUpReturns(result1 error) {
@@ -142,15 +160,15 @@ func (fake *Netlinker) LinkByNameReturns(result1 netlink.Link, result2 error) {
 	}{result1, result2}
 }
 
-func (fake *Netlinker) LinkSetNsFd(hostVeth netlink.Link, fd int) error {
+func (fake *Netlinker) LinkSetNsFd(link netlink.Link, fd int) error {
 	fake.linkSetNsFdMutex.Lock()
 	fake.linkSetNsFdArgsForCall = append(fake.linkSetNsFdArgsForCall, struct {
-		hostVeth netlink.Link
-		fd       int
-	}{hostVeth, fd})
+		link netlink.Link
+		fd   int
+	}{link, fd})
 	fake.linkSetNsFdMutex.Unlock()
 	if fake.LinkSetNsFdStub != nil {
-		return fake.LinkSetNsFdStub(hostVeth, fd)
+		return fake.LinkSetNsFdStub(link, fd)
 	} else {
 		return fake.linkSetNsFdReturns.result1
 	}
@@ -165,7 +183,7 @@ func (fake *Netlinker) LinkSetNsFdCallCount() int {
 func (fake *Netlinker) LinkSetNsFdArgsForCall(i int) (netlink.Link, int) {
 	fake.linkSetNsFdMutex.RLock()
 	defer fake.linkSetNsFdMutex.RUnlock()
-	return fake.linkSetNsFdArgsForCall[i].hostVeth, fake.linkSetNsFdArgsForCall[i].fd
+	return fake.linkSetNsFdArgsForCall[i].link, fake.linkSetNsFdArgsForCall[i].fd
 }
 
 func (fake *Netlinker) LinkSetNsFdReturns(result1 error) {
@@ -175,4 +193,70 @@ func (fake *Netlinker) LinkSetNsFdReturns(result1 error) {
 	}{result1}
 }
 
-var _ veth.Netlinker = new(Netlinker)
+func (fake *Netlinker) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
+	fake.addrAddMutex.Lock()
+	fake.addrAddArgsForCall = append(fake.addrAddArgsForCall, struct {
+		link netlink.Link
+		addr *netlink.Addr
+	}{link, addr})
+	fake.addrAddMutex.Unlock()
+	if fake.AddrAddStub != nil {
+		return fake.AddrAddStub(link, addr)
+	} else {
+		return fake.addrAddReturns.result1
+	}
+}
+
+func (fake *Netlinker) AddrAddCallCount() int {
+	fake.addrAddMutex.RLock()
+	defer fake.addrAddMutex.RUnlock()
+	return len(fake.addrAddArgsForCall)
+}
+
+func (fake *Netlinker) AddrAddArgsForCall(i int) (netlink.Link, *netlink.Addr) {
+	fake.addrAddMutex.RLock()
+	defer fake.addrAddMutex.RUnlock()
+	return fake.addrAddArgsForCall[i].link, fake.addrAddArgsForCall[i].addr
+}
+
+func (fake *Netlinker) AddrAddReturns(result1 error) {
+	fake.AddrAddStub = nil
+	fake.addrAddReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *Netlinker) LinkSetMaster(slave netlink.Link, master *netlink.Bridge) error {
+	fake.linkSetMasterMutex.Lock()
+	fake.linkSetMasterArgsForCall = append(fake.linkSetMasterArgsForCall, struct {
+		slave  netlink.Link
+		master *netlink.Bridge
+	}{slave, master})
+	fake.linkSetMasterMutex.Unlock()
+	if fake.LinkSetMasterStub != nil {
+		return fake.LinkSetMasterStub(slave, master)
+	} else {
+		return fake.linkSetMasterReturns.result1
+	}
+}
+
+func (fake *Netlinker) LinkSetMasterCallCount() int {
+	fake.linkSetMasterMutex.RLock()
+	defer fake.linkSetMasterMutex.RUnlock()
+	return len(fake.linkSetMasterArgsForCall)
+}
+
+func (fake *Netlinker) LinkSetMasterArgsForCall(i int) (netlink.Link, *netlink.Bridge) {
+	fake.linkSetMasterMutex.RLock()
+	defer fake.linkSetMasterMutex.RUnlock()
+	return fake.linkSetMasterArgsForCall[i].slave, fake.linkSetMasterArgsForCall[i].master
+}
+
+func (fake *Netlinker) LinkSetMasterReturns(result1 error) {
+	fake.LinkSetMasterStub = nil
+	fake.linkSetMasterReturns = struct {
+		result1 error
+	}{result1}
+}
+
+var _ nl.Netlinker = new(Netlinker)
