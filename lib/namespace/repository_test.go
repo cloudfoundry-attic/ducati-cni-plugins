@@ -107,7 +107,7 @@ var _ = Describe("NamespaceRepo", func() {
 			callback := func() error {
 				return syscall.Stat("/proc/self/ns/net", &nsSelfStat)
 			}
-			err = ns.Run(callback)
+			err = ns.Execute(callback)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(repoStat.Ino).To(Equal(nsSelfStat.Ino))

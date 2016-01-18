@@ -8,11 +8,13 @@ import (
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 )
 
 //go:generate counterfeiter --fake-name Namespace . Namespace
 type Namespace interface {
 	Execute(func(*os.File) error) error
+	FilePath() string
 }
 
 type Veth struct {
@@ -20,12 +22,13 @@ type Veth struct {
 }
 
 type Pair struct {
-	Netlinker nl.Netlinker
-	Host      netlink.Link
-	Container netlink.Link
+	Netlinker      nl.Netlinker
+	Host           netlink.Link
+	Container      netlink.Link
+	ContainerIPNet net.IPNet
 }
 
-func (v Veth) CreatePair(hostName, containerName string) (*Pair, error) {
+func (v Veth) CreatePair(hostName, containerName string, containerIPNet net.IPNet) (*Pair, error) {
 	containerLink := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  containerName,
@@ -46,16 +49,17 @@ func (v Veth) CreatePair(hostName, containerName string) (*Pair, error) {
 	}
 
 	pair := &Pair{
-		Netlinker: v.Netlinker,
-		Host:      hostLink,
-		Container: containerLink,
+		Netlinker:      v.Netlinker,
+		Host:           hostLink,
+		Container:      containerLink,
+		ContainerIPNet: containerIPNet,
 	}
 
 	return pair, nil
 }
 
 func (p *Pair) SetupContainer(namespace Namespace) error {
-	return namespace.Execute(p.setupContainerInNamespace)
+	return p.setupContainerInNamespace(namespace)
 }
 
 func (p *Pair) SetupHost(namespace Namespace) error {
@@ -63,12 +67,17 @@ func (p *Pair) SetupHost(namespace Namespace) error {
 }
 
 func (p *Pair) setupHostInNamespace(file *os.File) error {
+	linkName := p.Host.Attrs().Name
+
 	err := p.Netlinker.LinkSetNsFd(p.Host, int(file.Fd()))
 	if err != nil {
 		return errors.New(fmt.Sprintf("failed entering namespace: %s", err))
 	}
 
-	// TODO: refresh the link object
+	p.Host, err = p.Netlinker.LinkByName(linkName)
+	if err != nil {
+		return fmt.Errorf("failed finding host link after Ns set: %s", err)
+	}
 
 	if err := p.Netlinker.LinkSetUp(p.Host); err != nil {
 		return errors.New(fmt.Sprintf("failed setting link UP: %s", err))
@@ -77,10 +86,36 @@ func (p *Pair) setupHostInNamespace(file *os.File) error {
 	return nil
 }
 
-func (p *Pair) setupContainerInNamespace(file *os.File) error {
-	if err := p.Netlinker.LinkSetUp(p.Container); err != nil {
-		return errors.New(fmt.Sprintf("failed setting link UP: %s", err))
+func (p *Pair) setupContainerInNamespace(namespace Namespace) error {
+	file, err := netns.GetFromPath(namespace.FilePath())
+	if err != nil {
+		panic(err)
 	}
 
-	return nil
+	linkName := p.Container.Attrs().Name
+
+	err = p.Netlinker.LinkSetNsFd(p.Container, int(file))
+	if err != nil {
+		return errors.New(fmt.Sprintf("failed entering namespace: %s", err))
+	}
+
+	return namespace.Execute(func(*os.File) error {
+		p.Container, err = p.Netlinker.LinkByName(linkName)
+		if err != nil {
+			return fmt.Errorf("failed finding host link after Ns set: %s", err)
+		}
+
+		err = p.Netlinker.AddrAdd(p.Container, &netlink.Addr{
+			IPNet: &p.ContainerIPNet,
+		})
+		if err != nil {
+			return fmt.Errorf("failed adding address to container veth: %s", err)
+		}
+
+		if err = p.Netlinker.LinkSetUp(p.Container); err != nil {
+			return errors.New(fmt.Sprintf("failed setting link UP: %s", err))
+		}
+
+		return nil
+	})
 }

@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"runtime"
 
 	"github.com/appc/cni/pkg/ipam"
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/overlay"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth"
@@ -54,13 +55,15 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	v := veth.Veth{Netlinker: nl.Netlink}
 
-	pair, err := v.CreatePair("host-name", args.IfName)
+	containerIPNet := ipamResult.IP4.IP
+
+	pair, err := v.CreatePair("host-name", args.IfName, containerIPNet)
 	if err != nil {
 		panic(err)
 	}
 
-	containerNS := bogusNamespace{path: args.Netns}
-	hostNS := bogusNamespace{path: "/proc/self/ns/net"}
+	containerNS := &namespace.Namespace{Path: args.Netns}
+	hostNS := &namespace.Namespace{Path: "/proc/self/ns/net"}
 
 	err = pair.SetupContainer(containerNS)
 	if err != nil {
@@ -119,20 +122,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return ipamResult.Print()
 }
 
-type bogusNamespace struct {
-	path string
-}
-
-func (bn bogusNamespace) Execute(callback func(file *os.File) error) error {
-	file, err := os.Open(bn.path)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	return callback(file)
-}
-
 func cmdDel(args *skel.CmdArgs) error {
 	n, err := loadConf(args.StdinData)
 	if err != nil {
@@ -149,5 +138,6 @@ func cmdDel(args *skel.CmdArgs) error {
 }
 
 func main() {
+	runtime.LockOSThread()
 	skel.PluginMain(cmdAdd, cmdDel)
 }
