@@ -17,6 +17,12 @@ type Namespace struct {
 	executeReturns struct {
 		result1 error
 	}
+	FilePathStub        func() string
+	filePathMutex       sync.RWMutex
+	filePathArgsForCall []struct{}
+	filePathReturns     struct {
+		result1 string
+	}
 }
 
 func (fake *Namespace) Execute(arg1 func(*os.File) error) error {
@@ -48,6 +54,30 @@ func (fake *Namespace) ExecuteReturns(result1 error) {
 	fake.ExecuteStub = nil
 	fake.executeReturns = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *Namespace) FilePath() string {
+	fake.filePathMutex.Lock()
+	fake.filePathArgsForCall = append(fake.filePathArgsForCall, struct{}{})
+	fake.filePathMutex.Unlock()
+	if fake.FilePathStub != nil {
+		return fake.FilePathStub()
+	} else {
+		return fake.filePathReturns.result1
+	}
+}
+
+func (fake *Namespace) FilePathCallCount() int {
+	fake.filePathMutex.RLock()
+	defer fake.filePathMutex.RUnlock()
+	return len(fake.filePathArgsForCall)
+}
+
+func (fake *Namespace) FilePathReturns(result1 string) {
+	fake.FilePathStub = nil
+	fake.filePathReturns = struct {
+		result1 string
 	}{result1}
 }
 

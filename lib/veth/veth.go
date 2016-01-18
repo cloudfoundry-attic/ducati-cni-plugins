@@ -69,7 +69,7 @@ func (p *Pair) SetupHost(namespace Namespace) error {
 func (p *Pair) setupHostInNamespace(namespace Namespace) error {
 	file, err := netns.GetFromPath(namespace.FilePath())
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	linkName := p.Host.Attrs().Name
@@ -97,7 +97,7 @@ func (p *Pair) setupHostInNamespace(namespace Namespace) error {
 func (p *Pair) setupContainerInNamespace(namespace Namespace) error {
 	file, err := netns.GetFromPath(namespace.FilePath())
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	linkName := p.Container.Attrs().Name
