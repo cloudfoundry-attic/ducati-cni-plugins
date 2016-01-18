@@ -36,9 +36,11 @@ type Config struct {
 
 var _ = Describe("vxlan", func() {
 	var (
-		netConfig     Config
-		session       *gexec.Session
-		namespacePath string
+		netConfig            Config
+		session              *gexec.Session
+		namespacePath        string
+		sandboxNamespacePath string
+		sandboxNamespaceRepo string
 	)
 
 	BeforeEach(func() {
@@ -57,6 +59,10 @@ var _ = Describe("vxlan", func() {
 				},
 			},
 		}
+
+		const vni = 1
+		sandboxNamespaceRepo = "/var/ducati/os-sandboxes/"
+		sandboxNamespacePath = filepath.Join(sandboxNamespaceRepo, fmt.Sprintf("vni-%d", vni))
 	})
 
 	JustBeforeEach(func() {
@@ -71,6 +77,7 @@ var _ = Describe("vxlan", func() {
 			fmt.Sprintf("CNI_PATH=%s", cniPath),
 			fmt.Sprintf("CNI_NETNS=%s", namespacePath),
 			fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
+			fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxNamespaceRepo),
 		)
 
 		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
@@ -84,10 +91,15 @@ var _ = Describe("vxlan", func() {
 		}
 	})
 
-	It("creates a vxlan adapter in the host namespace", func() {
+	It("creates a vxlan adapter in the sandbox namespace", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
-		link, err := netlink.LinkByName("vxlan1")
+		var link netlink.Link
+		err := ns.WithNetNSPath(sandboxNamespacePath, false, func(_ *os.File) error {
+			var err error
+			link, err = netlink.LinkByName("vxlan1")
+			return err
+		})
 		Expect(err).NotTo(HaveOccurred())
 		vxlan, ok := link.(*netlink.Vxlan)
 		Expect(ok).To(BeTrue())
@@ -101,16 +113,36 @@ var _ = Describe("vxlan", func() {
 		Expect(vxlan.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
 	})
 
-	It("creates a vxlan bridge in the host namespace", func() {
+	It("creates a vxlan bridge in the sandbox namespace", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
-		link, err := netlink.LinkByName("vxlanbr1")
+		var result types.Result
+		Expect(json.Unmarshal(session.Out.Contents(), &result)).To(Succeed())
+
+		var gatewayAddr netlink.Addr
+		var link netlink.Link
+		err := ns.WithNetNSPath(sandboxNamespacePath, false, func(_ *os.File) error {
+			var err error
+			link, err = netlink.LinkByName("vxlanbr1")
+			if err != nil {
+				return err
+			}
+			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			Expect(addrs).To(HaveLen(1))
+			gatewayAddr = addrs[0]
+			return nil
+		})
 		Expect(err).NotTo(HaveOccurred())
+
 		bridge, ok := link.(*netlink.Bridge)
 		Expect(ok).To(BeTrue())
 
 		Expect(bridge.LinkAttrs.MTU).To(Equal(1450))
 		Expect(bridge.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
+		Expect(result.IP4.Gateway.String()).To(Equal(gatewayAddr.IPNet.IP.String()))
 	})
 
 	It("returns IPAM data", func() {

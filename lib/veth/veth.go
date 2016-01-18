@@ -63,25 +63,33 @@ func (p *Pair) SetupContainer(namespace Namespace) error {
 }
 
 func (p *Pair) SetupHost(namespace Namespace) error {
-	return namespace.Execute(p.setupHostInNamespace)
+	return p.setupHostInNamespace(namespace)
 }
 
-func (p *Pair) setupHostInNamespace(file *os.File) error {
+func (p *Pair) setupHostInNamespace(namespace Namespace) error {
+	file, err := netns.GetFromPath(namespace.FilePath())
+	if err != nil {
+		panic(err)
+	}
+
 	linkName := p.Host.Attrs().Name
 
-	err := p.Netlinker.LinkSetNsFd(p.Host, int(file.Fd()))
+	err = p.Netlinker.LinkSetNsFd(p.Host, int(file))
 	if err != nil {
 		return errors.New(fmt.Sprintf("failed entering namespace: %s", err))
 	}
 
-	p.Host, err = p.Netlinker.LinkByName(linkName)
-	if err != nil {
-		return fmt.Errorf("failed finding host link after Ns set: %s", err)
-	}
+	return namespace.Execute(func(*os.File) error {
+		p.Host, err = p.Netlinker.LinkByName(linkName)
+		if err != nil {
+			return fmt.Errorf("failed finding host link after Ns set: %s", err)
+		}
 
-	if err := p.Netlinker.LinkSetUp(p.Host); err != nil {
-		return errors.New(fmt.Sprintf("failed setting link UP: %s", err))
-	}
+		if err := p.Netlinker.LinkSetUp(p.Host); err != nil {
+			return errors.New(fmt.Sprintf("failed setting link UP: %s", err))
+		}
+		return nil
+	})
 
 	return nil
 }
