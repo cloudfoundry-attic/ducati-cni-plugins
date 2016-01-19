@@ -58,7 +58,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	containerIPNet := ipamResult.IP4.IP
 
-	// TODO: implement sandbox that takes netlinker as well
 	osSandboxRepoRoot := os.Getenv("DUCATI_OS_SANDBOX_REPO")
 	if osSandboxRepoRoot == "" {
 		panic("missing required env var DUCATI_OS_SANDBOX_REPO")
@@ -76,24 +75,12 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 	}
 
-	//sanbox := sandbox.Sandbox{
-	//NetLinker:   nl.Netlink,
-	//VNI:         1,
-	//HostNetwork: netConf.HostNetwork,
-	//Network:     netConf.Network,
-	//}
-
-	//Sandbox, err := sandbox.Create()
-
-	//err := sandbox.Add(pair.Host)
-
 	pair, err := v.CreatePair("host-name", args.IfName, containerIPNet)
 	if err != nil {
 		panic(err)
 	}
 
 	containerNS := &namespace.Namespace{Path: args.Netns}
-	//hostNS := &namespace.Namespace{Path: "/proc/self/ns/net"}
 
 	err = pair.SetupContainer(containerNS)
 	if err != nil {

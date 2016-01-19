@@ -165,6 +165,28 @@ var _ = Describe("Factory", func() {
 		})
 	})
 
+	Describe("CreateVethPair", func() {
+		It("should return two links", func() {
+			host, container, err := factory.CreateVethPair("some-host", "some-container")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(host.Attrs().Name).To(Equal("some-host"))
+			Expect(container.Attrs().Name).To(Equal("some-container"))
+		})
+
+		It("should add the link for the container", func() {
+			_, _, err := factory.CreateVethPair("some-host", "some-container")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.LinkAddCallCount()).To(Equal(1))
+			Expect(netlinker.LinkAddArgsForCall(0)).To(Equal(&netlink.Veth{
+				LinkAttrs: netlink.LinkAttrs{
+					Name: "some-container",
+				},
+			}))
+		})
+	})
+
 	Describe("FindLink", func() {
 		Context("when a link is found", func() {
 			It("should return the link", func() {

@@ -49,6 +49,27 @@ func (f *Factory) CreateBridge(name string, addr net.IP) (*netlink.Bridge, error
 	return bridge, nil
 }
 
+func (f *Factory) CreateVethPair(hostName, containerName string) (netlink.Link, netlink.Link, error) {
+	containerLink := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: containerName,
+			//Flags: net.FlagUp,
+			//MTU:   1450,
+		},
+		//PeerName: hostName,
+	}
+	hostLink := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: hostName,
+		},
+	}
+	err := f.Netlinker.LinkAdd(containerLink)
+	if err != nil {
+		panic(err)
+	}
+	return hostLink, containerLink, nil
+}
+
 func (f *Factory) CreateVxlan(name string, vni int) (netlink.Link, error) {
 	vxlan := &netlink.Vxlan{
 		LinkAttrs: netlink.LinkAttrs{
