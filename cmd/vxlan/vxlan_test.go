@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	. "github.com/onsi/ginkgo"
@@ -20,9 +21,9 @@ import (
 )
 
 type IPAM struct {
-	Type   string              `json:"type"`
-	Subnet string              `json:"subnet"`
-	Routes []map[string]string `json:"routes"`
+	Type   string              `json:"type,omitempty"`
+	Subnet string              `json:"subnet,omitempty"`
+	Routes []map[string]string `json:"routes,omitempty"`
 }
 
 type Config struct {
@@ -30,8 +31,10 @@ type Config struct {
 	Type        string `json:"type"`
 	Network     string `json:"network"`
 	HostNetwork string `json:"host_network"`
-	IPAM        IPAM   `json:"ipam"`
+	IPAM        IPAM   `json:"ipam,omitempty"`
 }
+
+const vni = 1
 
 var _ = Describe("vxlan", func() {
 	var (
@@ -41,7 +44,10 @@ var _ = Describe("vxlan", func() {
 		repoDir       string
 		hostNS        namespace.Namespace
 		containerNS   namespace.Namespace
+		sandboxNS     namespace.Namespace
 		namespaceRepo namespace.Repository
+
+		sandboxRepoDir string
 	)
 
 	BeforeEach(func() {
@@ -56,6 +62,9 @@ var _ = Describe("vxlan", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		hostNS, err = namespaceRepo.Create("host-ns")
+		Expect(err).NotTo(HaveOccurred())
+
+		sandboxRepoDir, err = ioutil.TempDir("", "sandbox")
 		Expect(err).NotTo(HaveOccurred())
 
 		netConfig = Config{
@@ -74,6 +83,8 @@ var _ = Describe("vxlan", func() {
 	})
 
 	JustBeforeEach(func() {
+		sandboxNS = namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni)))
+
 		input, err := json.Marshal(netConfig)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -85,7 +96,7 @@ var _ = Describe("vxlan", func() {
 			fmt.Sprintf("CNI_PATH=%s", cniPath),
 			fmt.Sprintf("CNI_NETNS=%s", containerNS.Path()),
 			fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
-			// fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxNamespaceRepo),
+			fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxRepoDir),
 		)
 
 		err = hostNS.Execute(func(_ *os.File) error {
@@ -102,10 +113,10 @@ var _ = Describe("vxlan", func() {
 		os.RemoveAll(repoDir)
 	})
 
-	It("creates a vxlan adapter in the host namespace", func() {
+	It("creates a vxlan adapter in the sandbox", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
-		hostNS.Execute(func(_ *os.File) error {
+		sandboxNS.Execute(func(_ *os.File) error {
 			link, err := netlink.LinkByName("vxlan1")
 			Expect(err).NotTo(HaveOccurred())
 			vxlan, ok := link.(*netlink.Vxlan)
@@ -123,14 +134,14 @@ var _ = Describe("vxlan", func() {
 		})
 	})
 
-	It("creates a vxlan bridge in the host namespace", func() {
+	It("creates a vxlan bridge in the sandbox", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
 		var result types.Result
 		err := json.Unmarshal(session.Out.Contents(), &result)
 		Expect(err).NotTo(HaveOccurred())
 
-		err = hostNS.Execute(func(_ *os.File) error {
+		err = sandboxNS.Execute(func(_ *os.File) error {
 			link, err := netlink.LinkByName("vxlanbr1")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -172,5 +183,85 @@ var _ = Describe("vxlan", func() {
 			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
+	})
+
+	Context("when DUCATI_OS_SANDBOX_REPO is not set", func() {
+		BeforeEach(func() {
+			sandboxRepoDir = ""
+		})
+
+		It("exits with an error", func() {
+			Eventually(session).Should(gexec.Exit(1))
+			Expect(session.Out.Contents()).To(ContainSubstring("DUCATI_OS_SANDBOX_REPO is required"))
+		})
+	})
+
+	Context("when creating the sandbox repo fails", func() {
+		BeforeEach(func() {
+			f, err := ioutil.TempFile("", "sandbox-repo")
+			Expect(err).NotTo(HaveOccurred())
+
+			sandboxRepoDir = f.Name()
+			f.Close()
+		})
+
+		It("exits with an error", func() {
+			Eventually(session).Should(gexec.Exit(1))
+			Expect(session.Out.Contents()).To(ContainSubstring("failed to create sandbox repository"))
+		})
+	})
+
+	Context("when the IPAM plugin returns an error", func() {
+		BeforeEach(func() {
+			netConfig.IPAM = IPAM{}
+			netConfig.IPAM.Type = "not-a-plugin"
+		})
+
+		It("exits with an error", func() {
+			Eventually(session).Should(gexec.Exit(1))
+			Expect(session.Out.Contents()).To(MatchRegexp("could not find.*plugin"))
+		})
+	})
+
+	Context("when the container namespace cannot be opened", func() {
+		BeforeEach(func() {
+			tempDir, err := ioutil.TempDir("", "non-existent-namespace")
+			Expect(err).NotTo(HaveOccurred())
+			containerNS = namespace.NewNamespace(filepath.Join(tempDir, "non-existent-ns"))
+		})
+
+		It("exits with an error", func() {
+			Eventually(session).Should(gexec.Exit(1))
+			Expect(session.Out.Contents()).To(ContainSubstring("non-existent-ns"))
+		})
+	})
+
+	Context("when the pair cannot be created", func() {
+		BeforeEach(func() {
+			Expect(exec.Command("ip", "netns", "add", "some-namespace").Run()).To(Succeed())
+			Expect(exec.Command("ip", "netns", "exec", "some-namespace", "ip", "link", "add", "host-name", "type", "dummy").Run()).To(Succeed())
+
+			containerNS = namespace.NewNamespace("/var/run/netns/some-namespace")
+		})
+
+		AfterEach(func() {
+			Expect(exec.Command("ip", "netns", "del", "some-namespace").Run()).To(Succeed())
+		})
+
+		It("returns with an error", func() {
+			Eventually(session).Should(gexec.Exit(1))
+			Expect(session.Out.Contents()).To(ContainSubstring("could not create veth pair"))
+		})
+	})
+
+	Context("When the Bridge cannot be created inside of the sanbox", func() {
+		BeforeEach(func() {
+			netConfig.IPAM.Type = "fake_plugins"
+		})
+
+		It("returns with an error", func() {
+			Eventually(session).Should(gexec.Exit(1))
+			Expect(session.Out.Contents()).To(ContainSubstring("failed to create bridge"))
+		})
 	})
 })

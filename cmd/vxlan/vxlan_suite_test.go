@@ -23,8 +23,9 @@ func TestVxlan(t *testing.T) {
 var pathToVxlan, cniPath string
 
 type paths struct {
-	VXLAN string `json:"vxlan"`
-	CNI   string `json:"cni"`
+	VXLAN    string `json:"vxlan"`
+	CNI      string `json:"cni"`
+	FAKEIPAM string `json:"fake_ipam"`
 }
 
 var _ = SynchronizedBeforeSuite(
@@ -46,9 +47,13 @@ var _ = SynchronizedBeforeSuite(
 		vxlan, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/cmd/vxlan")
 		Expect(err).NotTo(HaveOccurred())
 
+		fakeIpam, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/fake_plugins")
+		Expect(err).NotTo(HaveOccurred())
+
 		result, err := json.Marshal(paths{
-			VXLAN: vxlan,
-			CNI:   cniDir,
+			VXLAN:    vxlan,
+			CNI:      cniDir,
+			FAKEIPAM: fakeIpam,
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -61,8 +66,9 @@ var _ = SynchronizedBeforeSuite(
 
 		cniBinDir := filepath.Join(paths.CNI, "bin")
 		vxlanBinDir := filepath.Dir(paths.VXLAN)
+		fakeIpamDir := filepath.Dir(paths.FAKEIPAM)
 
-		cniPath = fmt.Sprintf("%s%c%s", vxlanBinDir, os.PathListSeparator, cniBinDir)
+		cniPath = fmt.Sprintf("%s%c%s%c%s", vxlanBinDir, os.PathListSeparator, cniBinDir, os.PathListSeparator, fakeIpamDir)
 		pathToVxlan = paths.VXLAN
 	},
 )

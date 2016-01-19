@@ -10,4 +10,5 @@ type Netlinker interface {
 	LinkSetNsFd(link netlink.Link, fd int) error
 	AddrAdd(link netlink.Link, addr *netlink.Addr) error
 	LinkSetMaster(slave netlink.Link, master *netlink.Bridge) error
+	RouteAdd(*netlink.Route) error
 }

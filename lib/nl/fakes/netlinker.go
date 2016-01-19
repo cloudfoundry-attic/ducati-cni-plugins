@@ -61,6 +61,14 @@ type Netlinker struct {
 	linkSetMasterReturns struct {
 		result1 error
 	}
+	RouteAddStub        func(*netlink.Route) error
+	routeAddMutex       sync.RWMutex
+	routeAddArgsForCall []struct {
+		arg1 *netlink.Route
+	}
+	routeAddReturns struct {
+		result1 error
+	}
 }
 
 func (fake *Netlinker) LinkAdd(link netlink.Link) error {
@@ -255,6 +263,38 @@ func (fake *Netlinker) LinkSetMasterArgsForCall(i int) (netlink.Link, *netlink.B
 func (fake *Netlinker) LinkSetMasterReturns(result1 error) {
 	fake.LinkSetMasterStub = nil
 	fake.linkSetMasterReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *Netlinker) RouteAdd(arg1 *netlink.Route) error {
+	fake.routeAddMutex.Lock()
+	fake.routeAddArgsForCall = append(fake.routeAddArgsForCall, struct {
+		arg1 *netlink.Route
+	}{arg1})
+	fake.routeAddMutex.Unlock()
+	if fake.RouteAddStub != nil {
+		return fake.RouteAddStub(arg1)
+	} else {
+		return fake.routeAddReturns.result1
+	}
+}
+
+func (fake *Netlinker) RouteAddCallCount() int {
+	fake.routeAddMutex.RLock()
+	defer fake.routeAddMutex.RUnlock()
+	return len(fake.routeAddArgsForCall)
+}
+
+func (fake *Netlinker) RouteAddArgsForCall(i int) *netlink.Route {
+	fake.routeAddMutex.RLock()
+	defer fake.routeAddMutex.RUnlock()
+	return fake.routeAddArgsForCall[i].arg1
+}
+
+func (fake *Netlinker) RouteAddReturns(result1 error) {
+	fake.RouteAddStub = nil
+	fake.routeAddReturns = struct {
 		result1 error
 	}{result1}
 }

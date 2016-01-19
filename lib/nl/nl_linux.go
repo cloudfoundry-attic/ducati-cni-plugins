@@ -29,3 +29,7 @@ func (*nl) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
 func (*nl) LinkSetMaster(slave netlink.Link, master *netlink.Bridge) error {
 	return netlink.LinkSetMaster(slave, master)
 }
+
+func (*nl) RouteAdd(route *netlink.Route) error {
+	return netlink.RouteAdd(route)
+}
