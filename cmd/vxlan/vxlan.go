@@ -65,12 +65,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	containerNS := namespace.NewNamespace(args.Netns)
 
-	f, err := os.Open(containerNS.Path())
+	containerNamespaceFile, err := containerNS.Open()
 	if err != nil {
 		panic(err)
 	}
+	defer containerNamespaceFile.Close()
 
-	err = nl.Netlink.LinkSetNsFd(containerLink, int(f.Fd()))
+	err = nl.Netlink.LinkSetNsFd(containerLink, int(containerNamespaceFile.Fd()))
 	if err != nil {
 		panic(err)
 	}

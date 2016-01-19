@@ -1,6 +1,7 @@
 package namespace_test
 
 import (
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +31,47 @@ var _ = Describe("Namespace", func() {
 
 			ns = namespace.NewNamespace("/foo/bar")
 			Expect(ns.Name()).To(Equal("bar"))
+		})
+	})
+
+	Describe("Open", func() {
+		var tempDir string
+		var ns namespace.Namespace
+
+		BeforeEach(func() {
+			var err error
+			tempDir, err = ioutil.TempDir("", "ns")
+			Expect(err).NotTo(HaveOccurred())
+
+			nsPath := filepath.Join(tempDir, "namespace")
+			nsFile, err := os.Create(nsPath)
+			Expect(err).NotTo(HaveOccurred())
+			nsFile.Close()
+
+			ns = namespace.NewNamespace(nsPath)
+		})
+
+		AfterEach(func() {
+			os.RemoveAll(tempDir)
+		})
+
+		It("returns an open file representing the namesapce", func() {
+			f, err := ns.Open()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(f.Name()).To(Equal(ns.Path()))
+			f.Close()
+		})
+
+		Context("when open fails", func() {
+			BeforeEach(func() {
+				err := os.Remove(ns.Path())
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("returns the error from open", func() {
+				_, err := ns.Open()
+				Expect(err).To(HaveOccurred())
+			})
 		})
 	})
 

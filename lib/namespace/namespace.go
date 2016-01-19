@@ -12,6 +12,7 @@ type Namespace interface {
 	Destroy() error
 	Execute(func(*os.File) error) error
 	Name() string
+	Open() (*os.File, error)
 	Path() string
 }
 
@@ -27,6 +28,10 @@ func NewNamespace(path string) Namespace {
 
 func (n *namespace) Name() string {
 	return filepath.Base(n.path)
+}
+
+func (n *namespace) Open() (*os.File, error) {
+	return os.Open(n.Path())
 }
 
 func (n *namespace) Path() string {
