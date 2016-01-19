@@ -8,8 +8,8 @@ import (
 )
 
 type Repository interface {
-	Get(name string) (*Namespace, error)
-	Create(name string) (*Namespace, error)
+	Get(name string) (Namespace, error)
+	Create(name string) (Namespace, error)
 }
 
 type repository struct {
@@ -26,19 +26,17 @@ func NewRepository(root string) (Repository, error) {
 	}, nil
 }
 
-func (r *repository) Get(name string) (*Namespace, error) {
+func (r *repository) Get(name string) (Namespace, error) {
 	file, err := r.open(name)
 	if err != nil {
 		return nil, err
 	}
 	file.Close()
 
-	return &Namespace{
-		Path: file.Name(),
-	}, nil
+	return NewNamespace(file.Name()), nil
 }
 
-func (r *repository) Create(name string) (*Namespace, error) {
+func (r *repository) Create(name string) (Namespace, error) {
 	file, err := r.create(name)
 	if err != nil {
 		return nil, err
@@ -62,7 +60,7 @@ func (r *repository) Create(name string) (*Namespace, error) {
 		panic(err)
 	}
 
-	return &Namespace{Path: file.Name()}, nil
+	return NewNamespace(file.Name()), nil
 }
 
 func (r *repository) open(name string) (*os.File, error) {

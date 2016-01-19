@@ -4,17 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/appc/cni/pkg/ns"
 	"github.com/appc/cni/pkg/types"
-	"github.com/onsi/ginkgo/config"
 	"github.com/onsi/gomega/gexec"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
@@ -36,15 +35,28 @@ type Config struct {
 
 var _ = Describe("vxlan", func() {
 	var (
-		netConfig            Config
-		session              *gexec.Session
-		namespacePath        string
-		sandboxNamespacePath string
-		sandboxNamespaceRepo string
+		netConfig Config
+		session   *gexec.Session
+
+		repoDir       string
+		hostNS        namespace.Namespace
+		containerNS   namespace.Namespace
+		namespaceRepo namespace.Repository
 	)
 
 	BeforeEach(func() {
-		namespacePath = newNetworkNamespace(fmt.Sprintf("test-ns-%d", config.GinkgoConfig.ParallelNode))
+		var err error
+		repoDir, err = ioutil.TempDir("", "vxlan")
+		Expect(err).NotTo(HaveOccurred())
+
+		namespaceRepo, err = namespace.NewRepository(repoDir)
+		Expect(err).NotTo(HaveOccurred())
+
+		containerNS, err = namespaceRepo.Create("container-ns")
+		Expect(err).NotTo(HaveOccurred())
+
+		hostNS, err = namespaceRepo.Create("host-ns")
+		Expect(err).NotTo(HaveOccurred())
 
 		netConfig = Config{
 			Name:        "test-network",
@@ -59,10 +71,6 @@ var _ = Describe("vxlan", func() {
 				},
 			},
 		}
-
-		const vni = 1
-		sandboxNamespaceRepo = "/var/ducati/os-sandboxes/"
-		sandboxNamespacePath = filepath.Join(sandboxNamespaceRepo, fmt.Sprintf("vni-%d", vni))
 	})
 
 	JustBeforeEach(func() {
@@ -75,101 +83,94 @@ var _ = Describe("vxlan", func() {
 			os.Environ(),
 			fmt.Sprintf("CNI_COMMAND=ADD"),
 			fmt.Sprintf("CNI_PATH=%s", cniPath),
-			fmt.Sprintf("CNI_NETNS=%s", namespacePath),
+			fmt.Sprintf("CNI_NETNS=%s", containerNS.Path()),
 			fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
-			fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxNamespaceRepo),
+			// fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxNamespaceRepo),
 		)
 
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+		err = hostNS.Execute(func(_ *os.File) error {
+			var err error
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			return err
+		})
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		removeNetworkNamespace(filepath.Base(namespacePath))
-		for _, name := range []string{"container-name", "host-name", "vxlan1", "vxlanbr1"} {
-			exec.Command("ip", "link", "del", name).Run()
-		}
+		containerNS.Destroy()
+		hostNS.Destroy()
+		os.RemoveAll(repoDir)
 	})
 
-	It("creates a vxlan adapter in the sandbox namespace", func() {
+	It("creates a vxlan adapter in the host namespace", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
-		var link netlink.Link
-		err := ns.WithNetNSPath(sandboxNamespacePath, false, func(_ *os.File) error {
-			var err error
-			link, err = netlink.LinkByName("vxlan1")
-			return err
-		})
-		Expect(err).NotTo(HaveOccurred())
-		vxlan, ok := link.(*netlink.Vxlan)
-		Expect(ok).To(BeTrue())
+		hostNS.Execute(func(_ *os.File) error {
+			link, err := netlink.LinkByName("vxlan1")
+			Expect(err).NotTo(HaveOccurred())
+			vxlan, ok := link.(*netlink.Vxlan)
+			Expect(ok).To(BeTrue())
 
-		Expect(vxlan.VxlanId).To(Equal(1))
-		Expect(vxlan.Learning).To(BeTrue())
-		Expect(vxlan.Port).To(BeEquivalentTo(nl.Swap16(4789)))
-		Expect(vxlan.Proxy).To(BeTrue())
-		Expect(vxlan.L2miss).To(BeTrue())
-		Expect(vxlan.L3miss).To(BeTrue())
-		Expect(vxlan.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
+			Expect(vxlan.VxlanId).To(Equal(1))
+			Expect(vxlan.Learning).To(BeTrue())
+			Expect(vxlan.Port).To(BeEquivalentTo(nl.Swap16(4789)))
+			Expect(vxlan.Proxy).To(BeTrue())
+			Expect(vxlan.L2miss).To(BeTrue())
+			Expect(vxlan.L3miss).To(BeTrue())
+			Expect(vxlan.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
+
+			return nil
+		})
 	})
 
-	It("creates a vxlan bridge in the sandbox namespace", func() {
+	It("creates a vxlan bridge in the host namespace", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
 		var result types.Result
-		Expect(json.Unmarshal(session.Out.Contents(), &result)).To(Succeed())
+		err := json.Unmarshal(session.Out.Contents(), &result)
+		Expect(err).NotTo(HaveOccurred())
 
-		var gatewayAddr netlink.Addr
-		var link netlink.Link
-		err := ns.WithNetNSPath(sandboxNamespacePath, false, func(_ *os.File) error {
-			var err error
-			link, err = netlink.LinkByName("vxlanbr1")
-			if err != nil {
-				return err
-			}
+		err = hostNS.Execute(func(_ *os.File) error {
+			link, err := netlink.LinkByName("vxlanbr1")
+			Expect(err).NotTo(HaveOccurred())
+
+			bridge, ok := link.(*netlink.Bridge)
+			Expect(ok).To(BeTrue())
+			Expect(bridge.LinkAttrs.MTU).To(Equal(1450))
+			Expect(bridge.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
+
 			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
-			if err != nil {
-				return err
-			}
+			Expect(err).NotTo(HaveOccurred())
 			Expect(addrs).To(HaveLen(1))
-			gatewayAddr = addrs[0]
+			Expect(addrs[0].IPNet.IP.String()).To(Equal(result.IP4.Gateway.String()))
+
 			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
-
-		bridge, ok := link.(*netlink.Bridge)
-		Expect(ok).To(BeTrue())
-
-		Expect(bridge.LinkAttrs.MTU).To(Equal(1450))
-		Expect(bridge.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
-		Expect(result.IP4.Gateway.String()).To(Equal(gatewayAddr.IPNet.IP.String()))
 	})
 
 	It("returns IPAM data", func() {
 		Eventually(session).Should(gexec.Exit(0))
 
 		var result types.Result
-		Expect(json.Unmarshal(session.Out.Contents(), &result)).To(Succeed())
-
-		var containerAddr netlink.Addr
-		err := ns.WithNetNSPath(namespacePath, false, func(_ *os.File) error {
-			l, err := netlink.LinkByName("vx-eth0")
-			if err != nil {
-				return err
-			}
-			addrs, err := netlink.AddrList(l, netlink.FAMILY_V4)
-			if err != nil {
-				return err
-			}
-			Expect(addrs).To(HaveLen(1))
-			containerAddr = addrs[0]
-			return nil
-		})
+		err := json.Unmarshal(session.Out.Contents(), &result)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(result.IP4.Gateway.String()).To(Equal("192.168.1.1"))
 		Expect(result.IP4.Routes).To(HaveLen(1))
 		Expect(result.IP4.Routes[0].Dst.String()).To(Equal("0.0.0.0/0"))
-		Expect(result.IP4.IP.String()).To(Equal(containerAddr.IPNet.String()))
+
+		err = containerNS.Execute(func(_ *os.File) error {
+			l, err := netlink.LinkByName("vx-eth0")
+			Expect(err).NotTo(HaveOccurred())
+
+			addrs, err := netlink.AddrList(l, netlink.FAMILY_V4)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(addrs).To(HaveLen(1))
+			Expect(addrs[0].IPNet.IP.String()).To(Equal(result.IP4.IP.IP.String()))
+
+			return nil
+		})
+		Expect(err).NotTo(HaveOccurred())
 	})
 })

@@ -166,31 +166,94 @@ var _ = Describe("Factory", func() {
 	})
 
 	Describe("CreateVethPair", func() {
-		It("should return two links", func() {
-			host, container, err := factory.CreateVethPair("some-host", "some-container")
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(host.Attrs().Name).To(Equal("some-host"))
-			Expect(container.Attrs().Name).To(Equal("some-container"))
-		})
-
-		It("should add the link for the container", func() {
-			_, _, err := factory.CreateVethPair("some-host", "some-container")
+		It("adds a veth link with the appropriate names and MTU", func() {
+			_, _, err := factory.CreateVethPair("host", "container", 999)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(netlinker.LinkAddCallCount()).To(Equal(1))
-			Expect(netlinker.LinkAddArgsForCall(0)).To(Equal(&netlink.Veth{
+			veth, ok := netlinker.LinkAddArgsForCall(0).(*netlink.Veth)
+			Expect(ok).To(BeTrue())
+
+			Expect(veth.Attrs().Name).To(Equal("container"))
+			Expect(veth.Attrs().MTU).To(Equal(999))
+			Expect(veth.PeerName).To(Equal("host"))
+		})
+
+		It("retrieves the host link data after creating the pair", func() {
+			netlinker.LinkByNameStub = func(_ string) (netlink.Link, error) {
+				Expect(netlinker.LinkAddCallCount()).To(Equal(1))
+				return &netlink.Veth{}, nil
+			}
+
+			_, _, err := factory.CreateVethPair("host", "container", 999)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.LinkByNameCallCount()).To(Equal(1))
+			Expect(netlinker.LinkByNameArgsForCall(0)).To(Equal("host"))
+		})
+
+		It("returns the container link that was added", func() {
+			_, container, err := factory.CreateVethPair("host", "container", 999)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.LinkAddCallCount()).To(Equal(1))
+			addedLink := netlinker.LinkAddArgsForCall(0)
+			Expect(container).To(Equal(addedLink))
+		})
+
+		It("returns the host link that was retrieved", func() {
+			expectedHostLink := &netlink.Veth{
 				LinkAttrs: netlink.LinkAttrs{
-					Name: "some-container",
+					Name: "host",
+					MTU:  999,
 				},
-			}))
+				PeerName: "container",
+			}
+			netlinker.LinkByNameReturns(expectedHostLink, nil)
+
+			host, _, err := factory.CreateVethPair("host", "container", 999)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.LinkByNameCallCount()).To(Equal(1))
+			Expect(host).To(Equal(expectedHostLink))
+		})
+
+		Context("when adding the veth link fails", func() {
+			var linkAddError error
+
+			BeforeEach(func() {
+				linkAddError = errors.New("link add failed")
+				netlinker.LinkAddReturns(linkAddError)
+			})
+
+			It("returns the error", func() {
+				_, _, err := factory.CreateVethPair("host", "container", 999)
+				Expect(err).To(Equal(linkAddError))
+			})
+		})
+
+		Context("when retrieving the host link fails", func() {
+			var linkByNameError error
+
+			BeforeEach(func() {
+				linkByNameError = errors.New("link not found")
+				netlinker.LinkByNameReturns(nil, linkByNameError)
+			})
+
+			It("returns the error", func() {
+				_, _, err := factory.CreateVethPair("host", "container", 999)
+				Expect(err).To(Equal(linkByNameError))
+			})
 		})
 	})
 
 	Describe("FindLink", func() {
 		Context("when a link is found", func() {
-			It("should return the link", func() {
+			BeforeEach(func() {
 				netlinker.LinkByNameReturns(&netlink.Vxlan{VxlanId: 41}, nil)
+			})
+
+			It("should return the link", func() {
 				link, err := factory.FindLink("some-device-name")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(link).To(Equal(&netlink.Vxlan{VxlanId: 41}))
@@ -198,8 +261,11 @@ var _ = Describe("Factory", func() {
 		})
 
 		Context("when the link does not exist", func() {
-			It("should return nil", func() {
+			BeforeEach(func() {
 				netlinker.LinkByNameReturns(nil, errors.New("not found"))
+			})
+
+			It("should return nil", func() {
 				_, err := factory.FindLink("some-device-name")
 				Expect(err).To(Equal(errors.New("not found")))
 			})

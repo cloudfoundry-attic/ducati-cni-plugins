@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 
@@ -13,8 +14,6 @@ import (
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/overlay"
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/veth"
 	"github.com/vishvananda/netlink"
 )
 
@@ -26,9 +25,11 @@ type NetConf struct {
 
 func loadConf(bytes []byte) (*NetConf, error) {
 	n := &NetConf{}
+
 	if err := json.Unmarshal(bytes, n); err != nil {
 		return nil, fmt.Errorf("failed to load netconf: %v", err)
 	}
+
 	if n.Network == "" {
 		return nil, fmt.Errorf(`"network" field is required. It specifies the overlay subnet`)
 	}
@@ -38,6 +39,7 @@ func loadConf(bytes []byte) (*NetConf, error) {
 
 func cmdAdd(args *skel.CmdArgs) error {
 	const vni = 1
+	const vxlanMTU = 1450
 
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
@@ -54,81 +56,87 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return errors.New("IPAM plugin returned missing IPv4 config")
 	}
 
-	v := veth.Veth{Netlinker: nl.Netlink}
+	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 
-	containerIPNet := ipamResult.IP4.IP
-
-	osSandboxRepoRoot := os.Getenv("DUCATI_OS_SANDBOX_REPO")
-	if osSandboxRepoRoot == "" {
-		panic("missing required env var DUCATI_OS_SANDBOX_REPO")
-	}
-	sandboxRepo, err := namespace.NewRepository(osSandboxRepoRoot)
+	hostLink, containerLink, err := linkFactory.CreateVethPair("host-name", args.IfName, vxlanMTU)
 	if err != nil {
 		panic(err)
 	}
 
-	sandboxNS, err := sandboxRepo.Get(fmt.Sprintf("vni-%d", vni))
+	containerNS := namespace.NewNamespace(args.Netns)
+
+	f, err := os.Open(containerNS.Path())
 	if err != nil {
-		sandboxNS, err = sandboxRepo.Create(fmt.Sprintf("vni-%d", vni))
+		panic(err)
+	}
+
+	err = nl.Netlink.LinkSetNsFd(containerLink, int(f.Fd()))
+	if err != nil {
+		panic(err)
+	}
+
+	err = containerNS.Execute(func(ns *os.File) error {
+		link, err := nl.Netlink.LinkByName(args.IfName)
+		if err != nil {
+			return err
+		}
+
+		addr := &netlink.Addr{
+			IPNet: &net.IPNet{
+				IP:   ipamResult.IP4.IP.IP,
+				Mask: net.CIDRMask(32, 32),
+			},
+		}
+		err = nl.Netlink.AddrAdd(link, addr)
+		if err != nil {
+			return err
+		}
+
+		err = nl.Netlink.LinkSetUp(link)
 		if err != nil {
 			panic(err)
-		}
-	}
-
-	pair, err := v.CreatePair("host-name", args.IfName, containerIPNet)
-	if err != nil {
-		panic(err)
-	}
-
-	containerNS := &namespace.Namespace{Path: args.Netns}
-
-	err = pair.SetupContainer(containerNS)
-	if err != nil {
-		panic(err)
-	}
-
-	err = pair.SetupHost(sandboxNS)
-	if err != nil {
-		panic(err)
-	}
-
-	err = sandboxNS.Execute(func(*os.File) error {
-		vxlanName := fmt.Sprintf("vxlan%d", vni)
-		linkFactory := &links.Factory{Netlinker: nl.Netlink}
-		vxlan, err := linkFactory.FindLink(vxlanName)
-		if err != nil {
-			vxlan, err = linkFactory.CreateVxlan(vxlanName, vni)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		var bridge *netlink.Bridge
-		bridgeName := fmt.Sprintf("vxlanbr%d", vni)
-		link, err := linkFactory.FindLink(bridgeName)
-		if err != nil {
-			bridge, err = linkFactory.CreateBridge(bridgeName, ipamResult.IP4.Gateway)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			bridge = link.(*netlink.Bridge)
-		}
-
-		err = nl.Netlink.LinkSetMaster(vxlan, bridge)
-		if err != nil {
-			return err
-		}
-
-		err = nl.Netlink.LinkSetMaster(pair.Host, bridge)
-		if err != nil {
-			return err
 		}
 
 		return nil
 	})
 	if err != nil {
 		panic(err)
+	}
+
+	err = nl.Netlink.LinkSetUp(hostLink)
+	if err != nil {
+		panic(err)
+	}
+
+	vxlanName := fmt.Sprintf("vxlan%d", vni)
+	vxlan, err := linkFactory.FindLink(vxlanName)
+	if err != nil {
+		vxlan, err = linkFactory.CreateVxlan(vxlanName, vni)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var bridge *netlink.Bridge
+	bridgeName := fmt.Sprintf("vxlanbr%d", vni)
+	link, err := linkFactory.FindLink(bridgeName)
+	if err != nil {
+		bridge, err = linkFactory.CreateBridge(bridgeName, ipamResult.IP4.Gateway)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		bridge = link.(*netlink.Bridge)
+	}
+
+	err = nl.Netlink.LinkSetMaster(vxlan, bridge)
+	if err != nil {
+		return err
+	}
+
+	err = nl.Netlink.LinkSetMaster(hostLink, bridge)
+	if err != nil {
+		return err
 	}
 
 	return ipamResult.Print()
@@ -145,8 +153,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		return err
 	}
 
-	overlayController := &overlay.Controller{}
-	return overlayController.Delete(args.Netns, args.IfName)
+	return nil
 }
 
 func main() {

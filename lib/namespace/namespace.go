@@ -3,40 +3,45 @@ package namespace
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 
-	"github.com/vishvananda/netns"
+	"github.com/appc/cni/pkg/ns"
 )
 
-type Namespace struct {
-	Path string
+type Namespace interface {
+	Destroy() error
+	Execute(func(*os.File) error) error
+	Name() string
+	Path() string
 }
 
-func (n *Namespace) Name() string {
-	return filepath.Base(n.Path)
+type namespace struct {
+	path string
 }
 
-func (n *Namespace) FilePath() string {
-	return n.Path
+func NewNamespace(path string) Namespace {
+	return &namespace{
+		path: path,
+	}
 }
 
-func (n *Namespace) Execute(callback func(file *os.File) error) error {
-	originalHandle, err := netns.Get()
-	if err != nil {
-		return err
-	}
-	defer originalHandle.Close()
+func (n *namespace) Name() string {
+	return filepath.Base(n.path)
+}
 
-	nshandle, err := netns.GetFromPath(n.Path)
-	if err != nil {
-		return err
-	}
-	defer nshandle.Close()
+func (n *namespace) Path() string {
+	return n.path
+}
 
-	err = netns.Set(nshandle)
-	if err != nil {
-		return err
-	}
-	defer netns.Set(originalHandle)
+func (n *namespace) Execute(callback func(*os.File) error) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
-	return callback(os.NewFile(uintptr(nshandle), ""))
+	return ns.WithNetNSPath(n.path, false, func(f *os.File) error {
+		return callback(f)
+	})
+}
+
+func (n *namespace) Destroy() error {
+	return unlinkNetworkNamespace(n.path)
 }

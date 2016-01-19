@@ -49,24 +49,25 @@ func (f *Factory) CreateBridge(name string, addr net.IP) (*netlink.Bridge, error
 	return bridge, nil
 }
 
-func (f *Factory) CreateVethPair(hostName, containerName string) (netlink.Link, netlink.Link, error) {
+func (f *Factory) CreateVethPair(hostName, containerName string, mtu int) (netlink.Link, netlink.Link, error) {
 	containerLink := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name: containerName,
-			//Flags: net.FlagUp,
-			//MTU:   1450,
+			MTU:  mtu,
 		},
-		//PeerName: hostName,
+		PeerName: hostName,
 	}
-	hostLink := &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{
-			Name: hostName,
-		},
-	}
+
 	err := f.Netlinker.LinkAdd(containerLink)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
+
+	hostLink, err := f.Netlinker.LinkByName(hostName)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return hostLink, containerLink, nil
 }
 

@@ -1,63 +1,114 @@
 package namespace_test
 
-//func getInode(path string) uint64 {
-//var stat syscall.Stat_t
-//if err := syscall.Stat(path, &stat); err != nil {
-//panic(fmt.Errorf("unable to get inode: %s", err))
-//}
-//return stat.Ino
-//}
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
 
-//var _ = Describe("Namespace", func() {
-//Describe("Name", func() {
-//It("returns the basename of the underlying path", func() {
-//ns := &namespace.Namespace{Path: "/var/run/netns/foo"}
-//Expect(ns.Name()).To(Equal("foo"))
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 
-//ns = &namespace.Namespace{Path: "/foo"}
-//Expect(ns.Name()).To(Equal("foo"))
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+)
 
-//ns = &namespace.Namespace{Path: "/foo/bar"}
-//Expect(ns.Name()).To(Equal("bar"))
-//})
-//})
+var _ = Describe("Namespace", func() {
+	Describe("Path", func() {
+		It("returns the path used on the constructor", func() {
+			ns := namespace.NewNamespace("/some/path/name")
+			Expect(ns.Path()).To(Equal("/some/path/name"))
+		})
+	})
 
-//Describe("Execute", func() {
-//var nsInode uint64
+	Describe("Name", func() {
+		It("returns the basename of the underlying path", func() {
+			ns := namespace.NewNamespace("/var/run/netns/foo")
+			Expect(ns.Name()).To(Equal("foo"))
 
-//BeforeEach(func() {
-//fmt.Printf("host's view of it's own NS: %d\n", getInode("/proc/self/ns/net"))
-//err := exec.Command("ip", "netns", "add", "ns-test-ns").Run()
-//Expect(err).NotTo(HaveOccurred())
+			ns = namespace.NewNamespace("/foo")
+			Expect(ns.Name()).To(Equal("foo"))
 
-//var stat syscall.Stat_t
-//err = syscall.Stat("/var/run/netns/ns-test-ns", &stat)
-//Expect(err).NotTo(HaveOccurred())
+			ns = namespace.NewNamespace("/foo/bar")
+			Expect(ns.Name()).To(Equal("bar"))
+		})
+	})
 
-//nsInode = stat.Ino
-//fmt.Printf("container's NS (as seen by host): %d\n", getInode("/var/run/netns/ns-test-ns"))
-//})
+	Describe("Execute", func() {
+		var nsInode uint64
 
-//AfterEach(func() {
-//err := exec.Command("ip", "netns", "delete", "ns-test-ns").Run()
-//Expect(err).NotTo(HaveOccurred())
-//})
+		BeforeEach(func() {
+			err := exec.Command("ip", "netns", "add", "ns-test-ns").Run()
+			Expect(err).NotTo(HaveOccurred())
 
-//It("runs the closure in the namespace", func() {
+			var stat syscall.Stat_t
+			err = syscall.Stat("/var/run/netns/ns-test-ns", &stat)
+			Expect(err).NotTo(HaveOccurred())
 
-//ns := &namespace.Namespace{Path: "/var/run/netns/ns-test-ns"}
+			nsInode = stat.Ino
+		})
 
-//var stat syscall.Stat_t
-//closure := func() error {
-//fmt.Printf("container NS (as seen by itself): %d\n", getInode("/proc/self/ns/net"))
-//return syscall.Stat("/proc/self/ns/net", &stat)
-//}
+		AfterEach(func() {
+			err := exec.Command("ip", "netns", "delete", "ns-test-ns").Run()
+			Expect(err).NotTo(HaveOccurred())
+		})
 
-//err := ns.Execute(closure)
-//Expect(err).NotTo(HaveOccurred())
-//Expect(stat.Ino).To(Equal(nsInode))
+		It("runs the closure in the namespace", func() {
+			ns := namespace.NewNamespace("/var/run/netns/ns-test-ns")
 
-//fmt.Printf("host NS (seen by itself): %d\n", getInode("/proc/self/ns/net"))
-//})
-//})
-//})
+			var stat syscall.Stat_t
+			closure := func(f *os.File) error {
+				return syscall.Stat("/proc/self/ns/net", &stat)
+			}
+
+			err := ns.Execute(closure)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stat.Ino).To(Equal(nsInode))
+		})
+	})
+
+	Describe("Destroy", func() {
+		It("removes the namespace bind mount and file", func() {
+			err := exec.Command("ip", "netns", "add", "destroy-ns-test").Run()
+			Expect(err).NotTo(HaveOccurred())
+
+			ns := namespace.NewNamespace("/var/run/netns/destroy-ns-test")
+			err = ns.Destroy()
+			Expect(err).NotTo(HaveOccurred())
+
+			var stat syscall.Stat_t
+			err = syscall.Stat(ns.Path(), &stat)
+			Expect(err).To(HaveOccurred())
+			Expect(os.IsNotExist(err)).To(BeTrue())
+		})
+
+		Context("when the naemspace file does not exist", func() {
+			It("returns an error", func() {
+				ns := namespace.NewNamespace("/var/run/netns/non-existent")
+				err := ns.Destroy()
+				Expect(err).To(HaveOccurred())
+			})
+		})
+
+		Context("when the namespace file is not a bind mount", func() {
+			var nsPath string
+
+			BeforeEach(func() {
+				nsPath = filepath.Join("/var/run/netns", "simple-file")
+				_, err := os.Create(nsPath)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("returns an error", func() {
+				ns := namespace.NewNamespace(nsPath)
+				err := ns.Destroy()
+				Expect(err).To(HaveOccurred())
+			})
+
+			It("does not remove the file", func() {
+				f, err := os.Open(nsPath)
+				Expect(err).NotTo(HaveOccurred())
+				f.Close()
+			})
+		})
+	})
+})
