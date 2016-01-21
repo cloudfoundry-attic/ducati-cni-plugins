@@ -7,6 +7,7 @@ import (
 	"syscall"
 )
 
+//go:generate counterfeiter --fake-name Repository . Repository
 type Repository interface {
 	Get(name string) (Namespace, error)
 	Create(name string) (Namespace, error)
