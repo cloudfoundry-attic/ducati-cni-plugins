@@ -1,10 +1,12 @@
 package namespace_test
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
@@ -97,14 +99,17 @@ var _ = Describe("Namespace", func() {
 		It("runs the closure in the namespace", func() {
 			ns := namespace.NewNamespace("/var/run/netns/ns-test-ns")
 
-			var stat syscall.Stat_t
+			var namespaceInode string
 			closure := func(f *os.File) error {
-				return syscall.Stat("/proc/self/ns/net", &stat)
+				// syscall.Stat of "/proc/self/ns/net" seemed to be flakey
+				output, err := exec.Command("stat", "-L", "-c", "%i", "/proc/self/ns/net").CombinedOutput()
+				namespaceInode = strings.TrimSpace(string(output))
+				return err
 			}
 
 			err := ns.Execute(closure)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(stat.Ino).To(Equal(nsInode))
+			Expect(namespaceInode).To(Equal(fmt.Sprintf("%d", nsInode)))
 		})
 	})
 
@@ -138,6 +143,10 @@ var _ = Describe("Namespace", func() {
 				nsPath = filepath.Join("/var/run/netns", "simple-file")
 				_, err := os.Create(nsPath)
 				Expect(err).NotTo(HaveOccurred())
+			})
+
+			AfterEach(func() {
+				os.Remove(nsPath)
 			})
 
 			It("returns an error", func() {

@@ -145,17 +145,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	// type vxlanSandbox struct {
-	// 	Netlinker nl.Netlinker
-	// 	Namespace namespace.Namespace
-	// 	Bridge *netlink.Bridge
-	// 	Vxlan *netlink.Vxlan
-	// 	Container []*netlink.Veth
-	// }
-
-	// func (sb *vxlanSandbox) AddContainerLink(link netlink.Link) error {
-	// }
-
 	err = sandboxNS.Execute(func(ns *os.File) error {
 		sandboxLink, err = nl.Netlink.LinkByName(sandboxLink.Attrs().Name)
 		if err != nil {

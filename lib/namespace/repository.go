@@ -1,16 +1,23 @@
 package namespace
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 //go:generate counterfeiter --fake-name Repository . Repository
 type Repository interface {
 	Get(name string) (Namespace, error)
 	Create(name string) (Namespace, error)
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }
 
 type repository struct {
@@ -44,21 +51,22 @@ func (r *repository) Create(name string) (Namespace, error) {
 	}
 	file.Close()
 
-	err = exec.Command("ip", "netns", "add", name).Run()
+	tempName := fmt.Sprintf("ns-%.08x", random())
+	err = exec.Command("ip", "netns", "add", tempName).Run()
 	if err != nil {
 		os.Remove(file.Name())
 		return nil, err
 	}
 
-	netnsPath := filepath.Join("/var/run/netns", name)
+	netnsPath := filepath.Join("/var/run/netns", tempName)
 	err = bindMountFile(netnsPath, file.Name())
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	err = unlinkNetworkNamespace(netnsPath)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return NewNamespace(file.Name()), nil
@@ -70,6 +78,10 @@ func (r *repository) open(name string) (*os.File, error) {
 
 func (r *repository) create(name string) (*os.File, error) {
 	return os.OpenFile(filepath.Join(r.root, name), os.O_CREATE|os.O_EXCL, 0644)
+}
+
+func random() uint32 {
+	return rand.Uint32()
 }
 
 func unlinkNetworkNamespace(path string) error {

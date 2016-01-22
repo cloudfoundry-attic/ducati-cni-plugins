@@ -1,10 +1,12 @@
 package namespace_test
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
@@ -71,70 +73,50 @@ var _ = Describe("NamespaceRepo", func() {
 			err = syscall.Stat(nsPath, &repoStat)
 			Expect(err).NotTo(HaveOccurred())
 
-			var nsSelfStat syscall.Stat_t
+			var namespaceInode string
 			callback := func(_ *os.File) error {
-				return syscall.Stat("/proc/self/ns/net", &nsSelfStat)
+				// syscall.Stat of "/proc/self/ns/net" seemed to be flakey
+				output, err := exec.Command("stat", "-L", "-c", "%i", "/proc/self/ns/net").CombinedOutput()
+				namespaceInode = strings.TrimSpace(string(output))
+				return err
 			}
+
 			err = ns.Execute(callback)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(repoStat.Ino).To(Equal(nsSelfStat.Ino))
+			Expect(namespaceInode).To(Equal(fmt.Sprintf("%d", repoStat.Ino)))
 		})
 
 		It("should not show up in ip netns list", func() {
-			_, err := repo.Create("test-ns")
+			nsName := filepath.Base(repoDir)
+			ns, err := repo.Create(nsName)
 			Expect(err).NotTo(HaveOccurred())
-
-			nsPath := filepath.Join(repoDir, "test-ns")
-			defer syscall.Unmount(nsPath, syscall.MNT_DETACH)
+			defer ns.Destroy()
 
 			output, err := exec.Command("ip", "netns", "list").CombinedOutput()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output).NotTo(ContainSubstring("test-ns"))
+			Expect(output).NotTo(ContainSubstring(nsName))
 		})
 
 		Context("when the namespace file already exists", func() {
+			var nsName string
+
 			BeforeEach(func() {
-				f, err := os.Create(filepath.Join(repoDir, "test-ns"))
+				nsName = filepath.Base(repoDir)
+
+				f, err := os.Create(filepath.Join(repoDir, nsName))
 				Expect(err).NotTo(HaveOccurred())
 				f.Close()
 			})
 
 			AfterEach(func() {
-				os.RemoveAll(filepath.Join(repoDir, "test-ns"))
+				os.RemoveAll(filepath.Join(repoDir, nsName))
 			})
 
 			It("returns ErrExist", func() {
-				_, err := repo.Create("test-ns")
+				_, err := repo.Create(nsName)
 				Expect(err).To(HaveOccurred())
 				Expect(os.IsExist(err)).To(BeTrue())
-			})
-		})
-
-		Context("when ip netns add fails", func() {
-			BeforeEach(func() {
-				err := exec.Command("ip", "netns", "add", "test-ns").Run()
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			AfterEach(func() {
-				err := exec.Command("ip", "netns", "delete", "test-ns").Run()
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("returns an error", func() {
-				_, err := repo.Create("test-ns")
-				Expect(err).To(HaveOccurred())
-			})
-
-			It("deletes the namspace file in the target repository", func() {
-				_, err := repo.Create("test-ns")
-				Expect(err).To(HaveOccurred())
-
-				path := filepath.Join(repoDir, "test-ns")
-				_, err = os.Open(path)
-				Expect(err).To(HaveOccurred())
-				Expect(os.IsNotExist(err)).To(BeTrue())
 			})
 		})
 	})
