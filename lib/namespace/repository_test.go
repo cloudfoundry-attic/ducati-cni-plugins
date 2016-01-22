@@ -7,7 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	. "github.com/onsi/ginkgo"
@@ -67,15 +68,15 @@ var _ = Describe("NamespaceRepo", func() {
 			Expect(ns.Name()).To(Equal("test-ns"))
 
 			nsPath := filepath.Join(repoDir, "test-ns")
-			defer syscall.Unmount(nsPath, syscall.MNT_DETACH)
+			defer unix.Unmount(nsPath, unix.MNT_DETACH)
 
-			var repoStat syscall.Stat_t
-			err = syscall.Stat(nsPath, &repoStat)
+			var repoStat unix.Stat_t
+			err = unix.Stat(nsPath, &repoStat)
 			Expect(err).NotTo(HaveOccurred())
 
 			var namespaceInode string
 			callback := func(_ *os.File) error {
-				// syscall.Stat of "/proc/self/ns/net" seemed to be flakey
+				// Stat of "/proc/self/ns/net" seemed to be flakey
 				output, err := exec.Command("stat", "-L", "-c", "%i", "/proc/self/ns/net").CombinedOutput()
 				namespaceInode = strings.TrimSpace(string(output))
 				return err

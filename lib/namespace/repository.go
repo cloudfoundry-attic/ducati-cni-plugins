@@ -6,8 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 //go:generate counterfeiter --fake-name Repository . Repository
@@ -85,7 +86,7 @@ func random() uint32 {
 }
 
 func unlinkNetworkNamespace(path string) error {
-	if err := syscall.Unmount(path, syscall.MNT_DETACH); err != nil {
+	if err := unix.Unmount(path, unix.MNT_DETACH); err != nil {
 		return err
 	}
 	return os.Remove(path)
@@ -99,5 +100,5 @@ func bindMountFile(src, dst string) error {
 	}
 	f.Close()
 
-	return syscall.Mount(src, dst, "none", syscall.MS_BIND, "")
+	return unix.Mount(src, dst, "none", unix.MS_BIND, "")
 }

@@ -7,7 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 
@@ -84,8 +85,8 @@ var _ = Describe("Namespace", func() {
 			err := exec.Command("ip", "netns", "add", "ns-test-ns").Run()
 			Expect(err).NotTo(HaveOccurred())
 
-			var stat syscall.Stat_t
-			err = syscall.Stat("/var/run/netns/ns-test-ns", &stat)
+			var stat unix.Stat_t
+			err = unix.Stat("/var/run/netns/ns-test-ns", &stat)
 			Expect(err).NotTo(HaveOccurred())
 
 			nsInode = stat.Ino
@@ -101,7 +102,7 @@ var _ = Describe("Namespace", func() {
 
 			var namespaceInode string
 			closure := func(f *os.File) error {
-				// syscall.Stat of "/proc/self/ns/net" seemed to be flakey
+				// Stat of "/proc/self/ns/net" seemed to be flakey
 				output, err := exec.Command("stat", "-L", "-c", "%i", "/proc/self/ns/net").CombinedOutput()
 				namespaceInode = strings.TrimSpace(string(output))
 				return err
@@ -122,8 +123,8 @@ var _ = Describe("Namespace", func() {
 			err = ns.Destroy()
 			Expect(err).NotTo(HaveOccurred())
 
-			var stat syscall.Stat_t
-			err = syscall.Stat(ns.Path(), &stat)
+			var stat unix.Stat_t
+			err = unix.Stat(ns.Path(), &stat)
 			Expect(err).To(HaveOccurred())
 			Expect(os.IsNotExist(err)).To(BeTrue())
 		})
