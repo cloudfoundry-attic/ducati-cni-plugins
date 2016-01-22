@@ -1,6 +1,8 @@
 package namespace_test
 
 import (
+	"runtime"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -8,6 +10,7 @@ import (
 )
 
 func TestNamespace(t *testing.T) {
+	runtime.LockOSThread()
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Namespace Suite")
 }
