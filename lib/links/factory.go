@@ -100,3 +100,25 @@ func (f *Factory) CreateVxlan(name string, vni int) (netlink.Link, error) {
 func (f *Factory) FindLink(name string) (netlink.Link, error) {
 	return f.Netlinker.LinkByName(name)
 }
+
+func (f *Factory) DeleteLink(link netlink.Link) error {
+	return f.Netlinker.LinkDel(link)
+}
+
+func (f *Factory) DeleteLinkByName(name string) error {
+	link, err := f.Netlinker.LinkByName(name)
+	if err != nil {
+		return err
+	}
+
+	err = f.Netlinker.LinkDel(link)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (f *Factory) ListLinks() ([]netlink.Link, error) {
+	return f.Netlinker.LinkList()
+}

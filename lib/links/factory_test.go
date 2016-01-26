@@ -271,4 +271,98 @@ var _ = Describe("Factory", func() {
 			})
 		})
 	})
+
+	Describe("DeleteLink", func() {
+		It("deletes the link", func() {
+			link := &netlink.Dummy{}
+
+			err := factory.DeleteLink(link)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.LinkDelCallCount()).To(Equal(1))
+			Expect(netlinker.LinkDelArgsForCall(0)).To(Equal(link))
+		})
+
+		Context("when netlink LinkDel fails", func() {
+			BeforeEach(func() {
+				netlinker.LinkDelReturns(errors.New("link del failed"))
+			})
+
+			It("returns the error", func() {
+				link := &netlink.Dummy{}
+				err := factory.DeleteLink(link)
+				Expect(err).To(MatchError("link del failed"))
+			})
+		})
+	})
+
+	Describe("DeleteLinkByName", func() {
+		var expectedLink netlink.Link
+
+		BeforeEach(func() {
+			expectedLink = &netlink.Dummy{}
+			netlinker.LinkByNameReturns(expectedLink, nil)
+		})
+
+		It("finds the link by name before deleting it", func() {
+			err := factory.DeleteLinkByName("test-link")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.LinkByNameCallCount()).To(Equal(1))
+			Expect(netlinker.LinkByNameArgsForCall(0)).To(Equal("test-link"))
+
+			Expect(netlinker.LinkDelCallCount()).To(Equal(1))
+			Expect(netlinker.LinkDelArgsForCall(0)).To(Equal(expectedLink))
+		})
+
+		Context("when finding the link fails", func() {
+			BeforeEach(func() {
+				netlinker.LinkByNameReturns(nil, errors.New("can't find it"))
+			})
+
+			It("returns the error", func() {
+				err := factory.DeleteLinkByName("test-link")
+				Expect(err).To(MatchError("can't find it"))
+			})
+		})
+
+		Context("when deleting the link fails", func() {
+			BeforeEach(func() {
+				netlinker.LinkDelReturns(errors.New("delete failed"))
+			})
+
+			It("returns the error", func() {
+				err := factory.DeleteLinkByName("test-link")
+				Expect(err).To(MatchError("delete failed"))
+			})
+		})
+	})
+
+	Describe("ListLinks", func() {
+		var link1, link2 netlink.Link
+
+		BeforeEach(func() {
+			link1 = &netlink.Dummy{}
+			link2 = &netlink.Veth{}
+
+			netlinker.LinkListReturns([]netlink.Link{link1, link2}, nil)
+		})
+
+		It("returns the links", func() {
+			links, err := factory.ListLinks()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(links).To(ConsistOf(link1, link2))
+		})
+
+		Context("when listing links fails", func() {
+			BeforeEach(func() {
+				netlinker.LinkListReturns(nil, errors.New("list links failed"))
+			})
+
+			It("returns the error", func() {
+				_, err := factory.ListLinks()
+				Expect(err).To(MatchError("list links failed"))
+			})
+		})
+	})
 })

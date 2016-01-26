@@ -17,6 +17,8 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
+const vni = 1
+
 type NetConf struct {
 	types.NetConf
 	Network     string `json:"network"` // IPNet
@@ -73,11 +75,13 @@ func getSandboxNS(name string) (namespace.Namespace, error) {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-	const vni = 1
-
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
 		return err
+	}
+
+	if args.ContainerID == "" {
+		return errors.New("CNI_CONTAINERID is required")
 	}
 
 	sandboxNS, err := getSandboxNS(fmt.Sprintf("vni-%d", vni))
@@ -119,7 +123,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 			err           error
 		)
 
-		sandboxLink, containerLink, err = linkFactory.CreateVethPair("host-name", args.IfName, links.VxlanVethMTU)
+		hostLinkName := args.ContainerID
+		sandboxLink, containerLink, err = linkFactory.CreateVethPair(hostLinkName, args.IfName, links.VxlanVethMTU)
 		if err != nil {
 			return fmt.Errorf("could not create veth pair: %s", err)
 		}
@@ -205,6 +210,48 @@ func cmdDel(args *skel.CmdArgs) error {
 	err = ipam.ExecDel(n.IPAM.Type, args.StdinData)
 	if err != nil {
 		return err
+	}
+
+	linkFactory := &links.Factory{Netlinker: nl.Netlink}
+	containerNS := namespace.NewNamespace(args.Netns)
+
+	err = containerNS.Execute(func(ns *os.File) error {
+		linkFactory.DeleteLinkByName(args.IfName)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete link in container namespace: %s", err)
+	}
+
+	sandboxRepo, err := getSandboxRepo()
+	if err != nil {
+		return fmt.Errorf("failed to open sandbox repository: %s", err)
+	}
+
+	sandboxNS, err := sandboxRepo.Get(fmt.Sprintf("vni-%d", vni))
+	if err != nil {
+		return fmt.Errorf("failed to get sandbox namespace: %s", err)
+	}
+
+	var sandboxLinks []netlink.Link
+	err = sandboxNS.Execute(func(ns *os.File) error {
+		var err error
+		sandboxLinks, err = linkFactory.ListLinks()
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get sandbox links: %s", err)
+	}
+
+	for _, link := range sandboxLinks {
+		if _, ok := link.(*netlink.Veth); ok {
+			return nil // we still have a container attached
+		}
+	}
+
+	err = sandboxNS.Destroy()
+	if err != nil {
+		return fmt.Errorf("failed to destroy sandbox namespace: %s", err)
 	}
 
 	return nil

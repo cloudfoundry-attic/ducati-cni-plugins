@@ -33,3 +33,11 @@ func (*nl) LinkSetMaster(slave netlink.Link, master *netlink.Bridge) error {
 func (*nl) RouteAdd(route *netlink.Route) error {
 	return netlink.RouteAdd(route)
 }
+
+func (*nl) LinkDel(link netlink.Link) error {
+	return netlink.LinkDel(link)
+}
+
+func (*nl) LinkList() ([]netlink.Link, error) {
+	return netlink.LinkList()
+}

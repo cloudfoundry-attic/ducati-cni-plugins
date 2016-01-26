@@ -17,6 +17,21 @@ type Netlinker struct {
 	linkAddReturns struct {
 		result1 error
 	}
+	LinkDelStub        func(link netlink.Link) error
+	linkDelMutex       sync.RWMutex
+	linkDelArgsForCall []struct {
+		link netlink.Link
+	}
+	linkDelReturns struct {
+		result1 error
+	}
+	LinkListStub        func() ([]netlink.Link, error)
+	linkListMutex       sync.RWMutex
+	linkListArgsForCall []struct{}
+	linkListReturns     struct {
+		result1 []netlink.Link
+		result2 error
+	}
 	LinkSetUpStub        func(link netlink.Link) error
 	linkSetUpMutex       sync.RWMutex
 	linkSetUpArgsForCall []struct {
@@ -101,6 +116,63 @@ func (fake *Netlinker) LinkAddReturns(result1 error) {
 	fake.linkAddReturns = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *Netlinker) LinkDel(link netlink.Link) error {
+	fake.linkDelMutex.Lock()
+	fake.linkDelArgsForCall = append(fake.linkDelArgsForCall, struct {
+		link netlink.Link
+	}{link})
+	fake.linkDelMutex.Unlock()
+	if fake.LinkDelStub != nil {
+		return fake.LinkDelStub(link)
+	} else {
+		return fake.linkDelReturns.result1
+	}
+}
+
+func (fake *Netlinker) LinkDelCallCount() int {
+	fake.linkDelMutex.RLock()
+	defer fake.linkDelMutex.RUnlock()
+	return len(fake.linkDelArgsForCall)
+}
+
+func (fake *Netlinker) LinkDelArgsForCall(i int) netlink.Link {
+	fake.linkDelMutex.RLock()
+	defer fake.linkDelMutex.RUnlock()
+	return fake.linkDelArgsForCall[i].link
+}
+
+func (fake *Netlinker) LinkDelReturns(result1 error) {
+	fake.LinkDelStub = nil
+	fake.linkDelReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *Netlinker) LinkList() ([]netlink.Link, error) {
+	fake.linkListMutex.Lock()
+	fake.linkListArgsForCall = append(fake.linkListArgsForCall, struct{}{})
+	fake.linkListMutex.Unlock()
+	if fake.LinkListStub != nil {
+		return fake.LinkListStub()
+	} else {
+		return fake.linkListReturns.result1, fake.linkListReturns.result2
+	}
+}
+
+func (fake *Netlinker) LinkListCallCount() int {
+	fake.linkListMutex.RLock()
+	defer fake.linkListMutex.RUnlock()
+	return len(fake.linkListArgsForCall)
+}
+
+func (fake *Netlinker) LinkListReturns(result1 []netlink.Link, result2 error) {
+	fake.LinkListStub = nil
+	fake.linkListReturns = struct {
+		result1 []netlink.Link
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *Netlinker) LinkSetUp(link netlink.Link) error {
