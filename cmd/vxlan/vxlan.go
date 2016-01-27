@@ -146,6 +146,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 
 		for _, route := range ipamResult.IP4.Routes {
+			// TODO supporting gateway assigned to a particular route
 			nlRoute := &netlink.Route{
 				LinkIndex: containerLink.Attrs().Index,
 				Scope:     netlink.SCOPE_UNIVERSE,
@@ -154,7 +155,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 			}
 			err = nl.Netlink.RouteAdd(nlRoute)
 			if err != nil {
-				return fmt.Errorf("adding routes", err)
+				return fmt.Errorf("adding routes: %s", err)
 			}
 		}
 

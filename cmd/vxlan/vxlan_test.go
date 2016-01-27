@@ -205,35 +205,54 @@ var _ = Describe("vxlan", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("adds a routes within container namespace", func() {
-			Eventually(session).Should(gexec.Exit(0))
+		Context("when there are routes", func() {
+			BeforeEach(func() {
+				netConfig.IPAM.Routes = append(netConfig.IPAM.Routes, map[string]string{"dst": "10.10.10.0/24"})
+			})
 
-			var result types.Result
-			err := json.Unmarshal(session.Out.Contents(), &result)
-			Expect(err).NotTo(HaveOccurred())
+			It("should contain the routes", func() {
+				Eventually(session).Should(gexec.Exit(0))
 
-			err = containerNS.Execute(func(_ *os.File) error {
-				l, err := netlink.LinkByName("vx-eth0")
+				var result types.Result
+				err := json.Unmarshal(session.Out.Contents(), &result)
 				Expect(err).NotTo(HaveOccurred())
 
-				routes, err := netlink.RouteList(l, netlink.FAMILY_V4)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(routes).To(HaveLen(2))
+				err = containerNS.Execute(func(_ *os.File) error {
+					l, err := netlink.LinkByName("vx-eth0")
+					Expect(err).NotTo(HaveOccurred())
 
-				var defaultRoute, linkLocalRoute netlink.Route
-				for _, route := range routes {
-					if route.Gw != nil {
-						defaultRoute = route
-					} else {
-						linkLocalRoute = route
+					routes, err := netlink.RouteList(l, netlink.FAMILY_V4)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(routes).To(HaveLen(3))
+
+					var sanitizedRoutes []netlink.Route
+					for _, route := range routes {
+						sanitizedRoutes = append(sanitizedRoutes, netlink.Route{
+							Gw:  route.Gw,
+							Dst: route.Dst,
+							Src: route.Src,
+						})
 					}
-				}
 
-				Expect(defaultRoute.Gw.String()).To(Equal(result.IP4.Gateway.String()))
+					Expect(sanitizedRoutes).To(ContainElement(netlink.Route{
+						Gw: result.IP4.Gateway.To4(),
+					}))
 
-				Expect(linkLocalRoute.Dst.String()).To(Equal("192.168.1.0/24"))
-				Expect(linkLocalRoute.Src.String()).To(Equal(result.IP4.IP.IP.String()))
-				return nil
+					_, linkLocal, err := net.ParseCIDR("192.168.1.0/24")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(sanitizedRoutes).To(ContainElement(netlink.Route{
+						Dst: linkLocal,
+						Src: result.IP4.IP.IP.To4(),
+					}))
+
+					_, dest, err := net.ParseCIDR("10.10.10.0/24")
+					Expect(sanitizedRoutes).To(ContainElement(netlink.Route{
+						Dst: dest,
+						Gw:  result.IP4.Gateway.To4(),
+					}))
+
+					return nil
+				})
 			})
 		})
 
