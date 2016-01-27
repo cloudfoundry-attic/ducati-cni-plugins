@@ -77,7 +77,7 @@ func getSandboxNS(name string) (namespace.Namespace, error) {
 func cmdAdd(args *skel.CmdArgs) error {
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading config: %s", err)
 	}
 
 	if args.ContainerID == "" {
@@ -86,13 +86,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	sandboxNS, err := getSandboxNS(fmt.Sprintf("vni-%d", vni))
 	if err != nil {
-		return err
+		return fmt.Errorf("getting vxlan sandbox: %s", err)
 	}
 
 	// run the IPAM plugin and get back the config to apply
 	ipamResult, err := ipam.ExecAdd(netConf.IPAM.Type, args.StdinData)
 	if err != nil {
-		return err
+		return fmt.Errorf("executing IPAM plugin: %s", err)
 	}
 
 	if ipamResult.IP4 == nil {
@@ -106,13 +106,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	containerNamespaceFile, err := containerNS.Open()
 	if err != nil {
-		return err
+		return fmt.Errorf("opening container namespace: %s", err)
 	}
 	defer containerNamespaceFile.Close()
 
 	sandboxNamespaceFile, err := sandboxNS.Open()
 	if err != nil {
-		return err //cannot be tested
+		return fmt.Errorf("opening sandbox namespace: %s", err)
 	}
 	defer sandboxNamespaceFile.Close()
 
@@ -131,43 +131,76 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 		err = nl.Netlink.LinkSetNsFd(sandboxLink, int(sandboxNamespaceFile.Fd()))
 		if err != nil {
-			return err // cannot be tested
+			return fmt.Errorf("failed to move veth peer into sandbox: %s", err)
 		}
 
 		err = addressManager.AddAddress(containerLink, ipamResult.IP4.IP.IP)
 		if err != nil {
-			return err // cannot be tested
+			return fmt.Errorf("adding address to container veth end: %s", err)
 		}
 
 		err = nl.Netlink.LinkSetUp(containerLink)
 		if err != nil {
-			return err // cannot be tested
+			return fmt.Errorf("upping container veth end: %s", err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("configuring container namespace: %s", err)
+	}
+
+	vxlanName := fmt.Sprintf("vxlan%d", vni)
+
+	var foundVxlanDevice bool
+	err = sandboxNS.Execute(func(ns *os.File) error {
+		if _, err := linkFactory.FindLink(vxlanName); err == nil {
+			foundVxlanDevice = true
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed attempting to find vxlan device in sandbox: %s", err)
+	}
+
+	// create vxlan device within host namespace
+	if foundVxlanDevice == false {
+		vxlan, err := linkFactory.CreateVxlan(vxlanName, vni)
+		if err != nil {
+			return fmt.Errorf("creating vxlan device on host namespace: %s", err)
+		}
+
+		// move vxlan device to sandbox namespace
+		err = nl.Netlink.LinkSetNsFd(vxlan, int(sandboxNamespaceFile.Fd()))
+		if err != nil {
+			return fmt.Errorf("moving vxland device into sandbox: %s", err)
+		}
 	}
 
 	err = sandboxNS.Execute(func(ns *os.File) error {
+		vxlan, err := linkFactory.FindLink(vxlanName)
+		if err != nil {
+			return fmt.Errorf("finding vxlan device within sandbox: %s", err)
+		}
+
+		err = nl.Netlink.LinkSetUp(vxlan)
+		if err != nil {
+			return fmt.Errorf("upping sandbox veth end: %s", err)
+		}
+
+		vxlan, err = linkFactory.FindLink(vxlanName)
+		if err != nil {
+			return fmt.Errorf("finding vxlan device within sandbox after upping: %s", err)
+		}
+
 		sandboxLink, err = nl.Netlink.LinkByName(sandboxLink.Attrs().Name)
 		if err != nil {
-			return err // cannot be tested
+			return fmt.Errorf("find sandbox veth end by name: %s", err)
 		}
 
 		err = nl.Netlink.LinkSetUp(sandboxLink)
 		if err != nil {
-			return err // cannot be tested
-		}
-
-		vxlanName := fmt.Sprintf("vxlan%d", vni)
-		vxlan, err := linkFactory.FindLink(vxlanName)
-		if err != nil {
-			vxlan, err = linkFactory.CreateVxlan(vxlanName, vni)
-			if err != nil {
-				return err // cannot be tested
-			}
+			return fmt.Errorf("upping sandbox veth end: %s", err)
 		}
 
 		var bridge *netlink.Bridge
@@ -184,18 +217,18 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 		err = nl.Netlink.LinkSetMaster(vxlan, bridge)
 		if err != nil {
-			return err // cannot be tested
+			return fmt.Errorf("slaving vxlan to bridge: %s", err)
 		}
 
 		err = nl.Netlink.LinkSetMaster(sandboxLink, bridge)
 		if err != nil {
-			return err // cannot be tested
+			return fmt.Errorf("slaving veth end to bridge: %s", err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}
 
 	return ipamResult.Print()

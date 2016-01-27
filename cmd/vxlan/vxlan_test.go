@@ -113,6 +113,7 @@ var _ = Describe("vxlan", func() {
 
 	AfterEach(func() {
 		containerNS.Destroy()
+		sandboxNS.Destroy()
 		hostNS.Destroy()
 		os.RemoveAll(repoDir)
 	})
@@ -122,7 +123,7 @@ var _ = Describe("vxlan", func() {
 			execCNI("ADD", netConfig, containerNS, containerID)
 		})
 
-		It("creates a vxlan adapter in the sandbox", func() {
+		It("moves a vxlan adapter into the sandbox", func() {
 			Eventually(session).Should(gexec.Exit(0))
 
 			sandboxNS.Execute(func(_ *os.File) error {

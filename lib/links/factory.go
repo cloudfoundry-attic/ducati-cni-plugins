@@ -89,11 +89,6 @@ func (f *Factory) CreateVxlan(name string, vni int) (netlink.Link, error) {
 		return nil, err
 	}
 
-	err = f.Netlinker.LinkSetUp(vxlan)
-	if err != nil {
-		return nil, err
-	}
-
 	return vxlan, nil
 }
 
