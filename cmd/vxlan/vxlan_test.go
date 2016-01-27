@@ -35,6 +35,7 @@ type Config struct {
 }
 
 const vni = 1
+const DEFAULT_TIMEOUT = "3s"
 
 var _ = Describe("vxlan", func() {
 	var (
@@ -42,7 +43,6 @@ var _ = Describe("vxlan", func() {
 		session   *gexec.Session
 
 		repoDir       string
-		hostNS        namespace.Namespace
 		containerID   string
 		containerNS   namespace.Namespace
 		sandboxNS     namespace.Namespace
@@ -60,9 +60,6 @@ var _ = Describe("vxlan", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		containerNS, err = namespaceRepo.Create("container-ns")
-		Expect(err).NotTo(HaveOccurred())
-
-		hostNS, err = namespaceRepo.Create("host-ns")
 		Expect(err).NotTo(HaveOccurred())
 
 		sandboxRepoDir, err = ioutil.TempDir("", "sandbox")
@@ -85,7 +82,9 @@ var _ = Describe("vxlan", func() {
 		}
 	})
 
-	var execCNI = func(operation string, netConfig Config, containerNS namespace.Namespace, containerID string) {
+	var execCNI = func(operation string, netConfig Config, containerNS namespace.Namespace,
+		containerID, sandboxRepoDir string) {
+
 		sandboxNS = namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni)))
 
 		input, err := json.Marshal(netConfig)
@@ -103,28 +102,20 @@ var _ = Describe("vxlan", func() {
 			fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxRepoDir),
 		)
 
-		err = hostNS.Execute(func(_ *os.File) error {
-			var err error
-			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-			return err
-		})
+		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred())
 	}
 
 	AfterEach(func() {
 		containerNS.Destroy()
 		sandboxNS.Destroy()
-		hostNS.Destroy()
 		os.RemoveAll(repoDir)
 	})
 
 	Describe("ADD", func() {
-		JustBeforeEach(func() {
-			execCNI("ADD", netConfig, containerNS, containerID)
-		})
-
 		It("moves a vxlan adapter into the sandbox", func() {
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			sandboxNS.Execute(func(_ *os.File) error {
 				link, err := netlink.LinkByName("vxlan1")
@@ -145,33 +136,47 @@ var _ = Describe("vxlan", func() {
 		})
 
 		It("creates a vxlan bridge in the sandbox", func() {
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			var result types.Result
 			err := json.Unmarshal(session.Out.Contents(), &result)
 			Expect(err).NotTo(HaveOccurred())
 
+			var bridge *netlink.Bridge
+			var addrs []netlink.Addr
+
 			err = sandboxNS.Execute(func(_ *os.File) error {
 				link, err := netlink.LinkByName("vxlanbr1")
-				Expect(err).NotTo(HaveOccurred())
+				if err != nil {
+					return fmt.Errorf("finding link by name: %s", err)
+				}
 
-				bridge, ok := link.(*netlink.Bridge)
-				Expect(ok).To(BeTrue())
-				Expect(bridge.LinkAttrs.MTU).To(Equal(1450))
-				Expect(bridge.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
+				var ok bool
+				bridge, ok = link.(*netlink.Bridge)
+				if !ok {
+					return fmt.Errorf("unable to cast link to bridge")
+				}
 
-				addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(addrs).To(HaveLen(1))
-				Expect(addrs[0].IPNet.IP.String()).To(Equal(result.IP4.Gateway.String()))
+				addrs, err = netlink.AddrList(link, netlink.FAMILY_V4)
+				if err != nil {
+					return fmt.Errorf("unable to list addrs: %s", err)
+				}
 
 				return nil
 			})
 			Expect(err).NotTo(HaveOccurred())
+
+			Expect(bridge.LinkAttrs.MTU).To(Equal(1450))
+			Expect(bridge.LinkAttrs.Flags & net.FlagUp).To(Equal(net.FlagUp))
+
+			Expect(addrs).To(HaveLen(1))
+			Expect(addrs[0].IPNet.IP.String()).To(Equal(result.IP4.Gateway.String()))
 		})
 
 		It("creates a veth pair in the container and sandbox namespaces", func() {
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			err := containerNS.Execute(func(_ *os.File) error {
 				link, err := netlink.LinkByName("vx-eth0")
@@ -201,7 +206,8 @@ var _ = Describe("vxlan", func() {
 		})
 
 		It("returns IPAM data", func() {
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			var result types.Result
 			err := json.Unmarshal(session.Out.Contents(), &result)
@@ -226,7 +232,8 @@ var _ = Describe("vxlan", func() {
 		})
 
 		It("uses the IPAM plugin to allocate an IP", func() {
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			var result types.Result
 			err := json.Unmarshal(session.Out.Contents(), &result)
@@ -244,7 +251,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("exits with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("CNI_CONTAINERID is required"))
 			})
 		})
@@ -255,7 +263,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("exits with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("DUCATI_OS_SANDBOX_REPO is required"))
 			})
 		})
@@ -270,7 +279,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("exits with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("failed to create sandbox repository"))
 			})
 		})
@@ -282,7 +292,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("exits with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(MatchRegexp("could not find.*plugin"))
 			})
 		})
@@ -295,7 +306,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("exits with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("non-existent-ns"))
 			})
 		})
@@ -313,7 +325,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("returns with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("could not create veth pair"))
 			})
 		})
@@ -324,7 +337,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("returns with an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("failed to create bridge"))
 			})
 		})
@@ -334,8 +348,8 @@ var _ = Describe("vxlan", func() {
 		var containerAddress string
 
 		BeforeEach(func() {
-			execCNI("ADD", netConfig, containerNS, containerID)
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			var result types.Result
 			err := json.Unmarshal(session.Out.Contents(), &result)
@@ -344,12 +358,49 @@ var _ = Describe("vxlan", func() {
 			containerAddress = result.IP4.IP.IP.String()
 		})
 
-		JustBeforeEach(func() {
-			execCNI("DEL", netConfig, containerNS, containerID)
+		Context("when errors occur", func() {
+			Context("when the container namespace is invalid", func() {
+				It("should return an error", func() {
+					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+
+					execCNI("DEL", netConfig, namespace.NewNamespace("bad-path"), containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+					Expect(session.Out.Contents()).To(ContainSubstring("failed to delete link in container namespace"))
+				})
+			})
+
+			Context("when the sandbox repository cannot be acquired", func() {
+				It("returns an error", func() {
+					execCNI("DEL", netConfig, containerNS, containerID, "")
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+					Expect(session.Out.Contents()).To(ContainSubstring("failed to open sandbox repository"))
+				})
+
+				AfterEach(func() {
+					// cleanup the vxlan made during the BeforeEach ADD
+					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+				})
+			})
+
+			Context("when the sandbox namespace no longer exists", func() {
+				BeforeEach(func() {
+					err := sandboxNS.Destroy()
+					Expect(err).NotTo(HaveOccurred())
+				})
+
+				It("returns an error", func() {
+					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+					Expect(session.Out.Contents()).To(ContainSubstring("failed to get sandbox namespace"))
+				})
+			})
 		})
 
 		It("should release the IPAM managed address", func() {
-			Eventually(session).Should(gexec.Exit(0))
+			execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			addressPath := filepath.Join("/var/lib/cni/networks", "test-network", containerAddress)
 			_, err := os.Open(addressPath)
@@ -357,42 +408,10 @@ var _ = Describe("vxlan", func() {
 			Expect(os.IsNotExist(err)).To(BeTrue())
 		})
 
-		Context("when the container namespace is invalid", func() {
-			It("should return an error", func() {
-				Eventually(session).Should(gexec.Exit(0))
-
-				execCNI("DEL", netConfig, namespace.NewNamespace("bad-path"), containerID)
-				Eventually(session).Should(gexec.Exit(1))
-				Expect(session.Out.Contents()).To(ContainSubstring("failed to delete link in container namespace"))
-			})
-		})
-
-		Context("when the sandbox repository cannot be acquired", func() {
-			BeforeEach(func() {
-				sandboxRepoDir = ""
-			})
-
-			It("returns an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
-				Expect(session.Out.Contents()).To(ContainSubstring("failed to open sandbox repository"))
-			})
-		})
-
-		Context("when the sandbox namespace no longer exists", func() {
-			BeforeEach(func() {
-				err := sandboxNS.Destroy()
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("returns an error", func() {
-				Eventually(session).Should(gexec.Exit(1))
-				Expect(session.Out.Contents()).To(ContainSubstring("failed to get sandbox namespace"))
-			})
-		})
-
 		Context("when the last container leaves the network", func() {
 			It("should remove the sandboxNS", func() {
-				Eventually(session).Should(gexec.Exit(0))
+				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 				_, err := sandboxNS.Open()
 				Expect(err).To(HaveOccurred())
@@ -408,16 +427,18 @@ var _ = Describe("vxlan", func() {
 				containerNS2, err = namespaceRepo.Create("container-ns-2")
 				Expect(err).NotTo(HaveOccurred())
 
-				execCNI("ADD", netConfig, containerNS2, "guid-2")
-				Eventually(session).Should(gexec.Exit(0))
+				execCNI("ADD", netConfig, containerNS2, "guid-2", sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 			})
 
 			AfterEach(func() {
-				execCNI("DEL", netConfig, containerNS2, "guid-2")
+				execCNI("DEL", netConfig, containerNS2, "guid-2", sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 			})
 
 			It("should remove the veth pair from the container and sandbox namespaces", func() {
-				Eventually(session).Should(gexec.Exit(0))
+				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 				err := containerNS.Execute(func(_ *os.File) error {
 					_, err := netlink.LinkByName("vx-eth0")
@@ -437,7 +458,8 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("should preserve the veth pairs for other attached containers", func() {
-				Eventually(session).Should(gexec.Exit(0))
+				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 				err := containerNS2.Execute(func(_ *os.File) error {
 					_, err := netlink.LinkByName("vx-eth0")
@@ -454,5 +476,6 @@ var _ = Describe("vxlan", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})
+
 	})
 })
