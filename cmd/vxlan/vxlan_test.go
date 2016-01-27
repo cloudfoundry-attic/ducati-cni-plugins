@@ -205,6 +205,38 @@ var _ = Describe("vxlan", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("adds a routes within container namespace", func() {
+			Eventually(session).Should(gexec.Exit(0))
+
+			var result types.Result
+			err := json.Unmarshal(session.Out.Contents(), &result)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = containerNS.Execute(func(_ *os.File) error {
+				l, err := netlink.LinkByName("vx-eth0")
+				Expect(err).NotTo(HaveOccurred())
+
+				routes, err := netlink.RouteList(l, netlink.FAMILY_V4)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(routes).To(HaveLen(2))
+
+				var defaultRoute, linkLocalRoute netlink.Route
+				for _, route := range routes {
+					if route.Gw != nil {
+						defaultRoute = route
+					} else {
+						linkLocalRoute = route
+					}
+				}
+
+				Expect(defaultRoute.Gw.String()).To(Equal(result.IP4.Gateway.String()))
+
+				Expect(linkLocalRoute.Dst.String()).To(Equal("192.168.1.0/24"))
+				Expect(linkLocalRoute.Src.String()).To(Equal(result.IP4.IP.IP.String()))
+				return nil
+			})
+		})
+
 		It("returns IPAM data", func() {
 			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))

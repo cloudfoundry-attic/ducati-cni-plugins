@@ -11,12 +11,9 @@ type AddressManager struct {
 	Netlinker nl.Netlinker
 }
 
-func (am *AddressManager) AddAddress(link netlink.Link, address net.IP) error {
+func (am *AddressManager) AddAddress(link netlink.Link, address *net.IPNet) error {
 	addr := &netlink.Addr{
-		IPNet: &net.IPNet{
-			IP:   address,
-			Mask: net.CIDRMask(32, 32),
-		},
+		IPNet: address,
 	}
 	return am.Netlinker.AddrAdd(link, addr)
 }

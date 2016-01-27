@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 
@@ -134,7 +135,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 			return fmt.Errorf("failed to move veth peer into sandbox: %s", err)
 		}
 
-		err = addressManager.AddAddress(containerLink, ipamResult.IP4.IP.IP)
+		err = addressManager.AddAddress(containerLink, &ipamResult.IP4.IP)
 		if err != nil {
 			return fmt.Errorf("adding address to container veth end: %s", err)
 		}
@@ -142,6 +143,19 @@ func cmdAdd(args *skel.CmdArgs) error {
 		err = nl.Netlink.LinkSetUp(containerLink)
 		if err != nil {
 			return fmt.Errorf("upping container veth end: %s", err)
+		}
+
+		for _, route := range ipamResult.IP4.Routes {
+			nlRoute := &netlink.Route{
+				LinkIndex: containerLink.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Dst:       &route.Dst,
+				Gw:        ipamResult.IP4.Gateway,
+			}
+			err = nl.Netlink.RouteAdd(nlRoute)
+			if err != nil {
+				return fmt.Errorf("adding routes", err)
+			}
 		}
 
 		return nil
@@ -207,7 +221,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 		bridgeName := fmt.Sprintf("vxlanbr%d", vni)
 		link, err := linkFactory.FindLink(bridgeName)
 		if err != nil {
-			bridge, err = linkFactory.CreateBridge(bridgeName, ipamResult.IP4.Gateway)
+			bridge, err = linkFactory.CreateBridge(bridgeName, &net.IPNet{
+				IP:   ipamResult.IP4.Gateway,
+				Mask: ipamResult.IP4.IP.Mask,
+			})
 			if err != nil {
 				return fmt.Errorf("failed to create bridge: %s", err)
 			}

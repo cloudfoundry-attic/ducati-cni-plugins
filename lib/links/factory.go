@@ -18,7 +18,7 @@ type Factory struct {
 	Netlinker nl.Netlinker
 }
 
-func (f *Factory) CreateBridge(name string, addr net.IP) (*netlink.Bridge, error) {
+func (f *Factory) CreateBridge(name string, addr *net.IPNet) (*netlink.Bridge, error) {
 	bridge := &netlink.Bridge{
 		LinkAttrs: netlink.LinkAttrs{
 			Name: name,
@@ -31,12 +31,7 @@ func (f *Factory) CreateBridge(name string, addr net.IP) (*netlink.Bridge, error
 		return nil, err
 	}
 
-	err = f.Netlinker.AddrAdd(bridge, &netlink.Addr{
-		IPNet: &net.IPNet{
-			IP:   addr,
-			Mask: net.CIDRMask(32, 32),
-		},
-	})
+	err = f.Netlinker.AddrAdd(bridge, &netlink.Addr{IPNet: addr})
 	if err != nil {
 		return nil, err
 	}

@@ -29,10 +29,11 @@ var _ = Describe("Factory", func() {
 	Describe("CreateBridge", func() {
 		var (
 			expectedBridge *netlink.Bridge
-			address        net.IP
+			address        *net.IPNet
 		)
 
 		BeforeEach(func() {
+			var err error
 			expectedBridge = &netlink.Bridge{
 				LinkAttrs: netlink.LinkAttrs{
 					Name: "some-bridge-name",
@@ -40,7 +41,8 @@ var _ = Describe("Factory", func() {
 				},
 			}
 
-			address = net.ParseIP("192.168.1.1")
+			_, address, err = net.ParseCIDR("192.168.1.1/24")
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should return a bridge with the expected config", func() {
@@ -67,17 +69,13 @@ var _ = Describe("Factory", func() {
 		})
 
 		It("assigns the specified address", func() {
-			expectedNetwork := &net.IPNet{
-				IP:   address,
-				Mask: net.CIDRMask(32, 32),
-			}
 			_, err := factory.CreateBridge("some-bridge-name", address)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(netlinker.AddrAddCallCount()).To(Equal(1))
 			br, addr := netlinker.AddrAddArgsForCall(0)
 			Expect(br).To(Equal(expectedBridge))
-			Expect(addr).To(Equal(&netlink.Addr{IPNet: expectedNetwork}))
+			Expect(addr).To(Equal(&netlink.Addr{IPNet: address}))
 		})
 
 		Context("when assigning an address to the bridge fails", func() {

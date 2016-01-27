@@ -27,12 +27,14 @@ var _ = Describe("AddressManager", func() {
 	Describe("AddAddress", func() {
 		var (
 			link    netlink.Link
-			address net.IP
+			address *net.IPNet
 		)
 
 		BeforeEach(func() {
+			var err error
 			link = &netlink.Veth{}
-			address = net.ParseIP("192.168.1.1")
+			_, address, err = net.ParseCIDR("192.168.1.1/24")
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("adds an address to the link", func() {
@@ -43,10 +45,7 @@ var _ = Describe("AddressManager", func() {
 			actualLink, netlinkAddr := netlinker.AddrAddArgsForCall(0)
 
 			Expect(actualLink).To(Equal(link))
-			Expect(netlinkAddr.IPNet).To(Equal(&net.IPNet{
-				IP:   net.ParseIP("192.168.1.1"),
-				Mask: net.CIDRMask(32, 32),
-			}))
+			Expect(netlinkAddr.IPNet).To(Equal(address))
 		})
 
 		Context("when adding the addres fails", func() {
