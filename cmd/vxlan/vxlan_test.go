@@ -211,6 +211,7 @@ var _ = Describe("vxlan", func() {
 			})
 
 			It("should contain the routes", func() {
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
 				Eventually(session).Should(gexec.Exit(0))
 
 				var result types.Result
