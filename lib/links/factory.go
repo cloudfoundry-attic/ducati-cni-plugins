@@ -45,13 +45,17 @@ func (f *Factory) CreateBridge(name string, addr *net.IPNet) (*netlink.Bridge, e
 	return bridge, nil
 }
 
-func (f *Factory) CreateVethPair(hostName, containerName string, mtu int) (netlink.Link, netlink.Link, error) {
+func (f *Factory) CreateVethPair(containerID, hostIfaceName string, mtu int) (netlink.Link, netlink.Link, error) {
+	if len(containerID) > 11 {
+		containerID = containerID[:11]
+	}
+
 	containerLink := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
-			Name: containerName,
+			Name: hostIfaceName,
 			MTU:  mtu,
 		},
-		PeerName: hostName,
+		PeerName: containerID,
 	}
 
 	err := f.Netlinker.LinkAdd(containerLink)
@@ -59,7 +63,7 @@ func (f *Factory) CreateVethPair(hostName, containerName string, mtu int) (netli
 		return nil, nil, fmt.Errorf("link add: %s", err)
 	}
 
-	hostLink, err := f.Netlinker.LinkByName(hostName)
+	hostLink, err := f.Netlinker.LinkByName(containerID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("link by name: %s", err)
 	}

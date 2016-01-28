@@ -124,8 +124,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 			err           error
 		)
 
-		hostLinkName := args.ContainerID
-		sandboxLink, containerLink, err = linkFactory.CreateVethPair(hostLinkName, args.IfName, links.VxlanVethMTU)
+		sandboxLink, containerLink, err = linkFactory.CreateVethPair(args.ContainerID, args.IfName, links.VxlanVethMTU)
 		if err != nil {
 			return fmt.Errorf("could not create veth pair: %s", err)
 		}

@@ -147,16 +147,16 @@ var _ = Describe("Factory", func() {
 
 		Describe("CreateVethPair", func() {
 			It("adds a veth link with the appropriate names and MTU", func() {
-				_, _, err := factory.CreateVethPair("host", "container", 999)
+				_, _, err := factory.CreateVethPair("container", "host", 999)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(netlinker.LinkAddCallCount()).To(Equal(1))
 				veth, ok := netlinker.LinkAddArgsForCall(0).(*netlink.Veth)
 				Expect(ok).To(BeTrue())
 
-				Expect(veth.Attrs().Name).To(Equal("container"))
+				Expect(veth.Attrs().Name).To(Equal("host"))
 				Expect(veth.Attrs().MTU).To(Equal(999))
-				Expect(veth.PeerName).To(Equal("host"))
+				Expect(veth.PeerName).To(Equal("container"))
 			})
 
 			It("retrieves the host link data after creating the pair", func() {
@@ -165,15 +165,15 @@ var _ = Describe("Factory", func() {
 					return &netlink.Veth{}, nil
 				}
 
-				_, _, err := factory.CreateVethPair("host", "container", 999)
+				_, _, err := factory.CreateVethPair("container", "host", 999)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(netlinker.LinkByNameCallCount()).To(Equal(1))
-				Expect(netlinker.LinkByNameArgsForCall(0)).To(Equal("host"))
+				Expect(netlinker.LinkByNameArgsForCall(0)).To(Equal("container"))
 			})
 
 			It("returns the container link that was added", func() {
-				_, container, err := factory.CreateVethPair("host", "container", 999)
+				_, container, err := factory.CreateVethPair("container", "host", 999)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(netlinker.LinkAddCallCount()).To(Equal(1))
@@ -191,11 +191,21 @@ var _ = Describe("Factory", func() {
 				}
 				netlinker.LinkByNameReturns(expectedHostLink, nil)
 
-				host, _, err := factory.CreateVethPair("host", "container", 999)
+				host, _, err := factory.CreateVethPair("container", "host", 999)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(netlinker.LinkByNameCallCount()).To(Equal(1))
 				Expect(host).To(Equal(expectedHostLink))
+			})
+
+			Context("when a really long containerName is passed in", func() {
+				It("should concatenate to 11 characters", func() {
+					_, _, err := factory.CreateVethPair("really-long-name", "host", 999)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(netlinker.LinkByNameCallCount()).To(Equal(1))
+					Expect(netlinker.LinkByNameArgsForCall(0)).To(Equal("really-long"))
+				})
 			})
 
 			Context("when adding the veth link fails", func() {
@@ -204,7 +214,7 @@ var _ = Describe("Factory", func() {
 				})
 
 				It("returns the error", func() {
-					_, _, err := factory.CreateVethPair("host", "container", 999)
+					_, _, err := factory.CreateVethPair("container", "host", 999)
 					Expect(err).To(MatchError("link add: some error"))
 				})
 			})
@@ -215,7 +225,7 @@ var _ = Describe("Factory", func() {
 				})
 
 				It("returns the error", func() {
-					_, _, err := factory.CreateVethPair("host", "container", 999)
+					_, _, err := factory.CreateVethPair("container", "host", 999)
 					Expect(err).To(MatchError("link by name: some error"))
 				})
 			})
