@@ -1,6 +1,7 @@
 package links
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl"
@@ -55,12 +56,12 @@ func (f *Factory) CreateVethPair(hostName, containerName string, mtu int) (netli
 
 	err := f.Netlinker.LinkAdd(containerLink)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("link add: %s", err)
 	}
 
 	hostLink, err := f.Netlinker.LinkByName(hostName)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("link by name: %s", err)
 	}
 
 	return hostLink, containerLink, nil

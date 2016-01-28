@@ -199,30 +199,24 @@ var _ = Describe("Factory", func() {
 			})
 
 			Context("when adding the veth link fails", func() {
-				var linkAddError error
-
 				BeforeEach(func() {
-					linkAddError = errors.New("link add failed")
-					netlinker.LinkAddReturns(linkAddError)
+					netlinker.LinkAddReturns(errors.New("some error"))
 				})
 
 				It("returns the error", func() {
 					_, _, err := factory.CreateVethPair("host", "container", 999)
-					Expect(err).To(Equal(linkAddError))
+					Expect(err).To(MatchError("link add: some error"))
 				})
 			})
 
 			Context("when retrieving the host link fails", func() {
-				var linkByNameError error
-
 				BeforeEach(func() {
-					linkByNameError = errors.New("link not found")
-					netlinker.LinkByNameReturns(nil, linkByNameError)
+					netlinker.LinkByNameReturns(nil, errors.New("some error"))
 				})
 
 				It("returns the error", func() {
 					_, _, err := factory.CreateVethPair("host", "container", 999)
-					Expect(err).To(Equal(linkByNameError))
+					Expect(err).To(MatchError("link by name: some error"))
 				})
 			})
 		})
