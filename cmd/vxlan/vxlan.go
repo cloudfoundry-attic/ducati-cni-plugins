@@ -11,10 +11,12 @@ import (
 	"github.com/appc/cni/pkg/ipam"
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ip"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns" //only only on linux - ignore error
 	"github.com/vishvananda/netlink"
 )
 
@@ -105,63 +107,22 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	containerNS := namespace.NewNamespace(args.Netns)
 
-	containerNamespaceFile, err := containerNS.Open()
-	if err != nil {
-		return fmt.Errorf("opening container namespace: %s", err)
-	}
-	defer containerNamespaceFile.Close()
-
 	sandboxNamespaceFile, err := sandboxNS.Open()
 	if err != nil {
 		return fmt.Errorf("opening sandbox namespace: %s", err)
 	}
 	defer sandboxNamespaceFile.Close()
 
-	var sandboxLink netlink.Link
-	err = containerNS.Execute(func(ns *os.File) error {
-		var (
-			containerLink netlink.Link
-			err           error
-		)
+	executor := executor.Executor{
+		NetworkNamespacer: ns.Namespacer,
+		LinkFactory:       linkFactory,
+		Netlinker:         nl.Netlink,
+		AddressManager:    addressManager,
+	}
 
-		sandboxLink, containerLink, err = linkFactory.CreateVethPair(args.ContainerID, args.IfName, links.VxlanVethMTU)
-		if err != nil {
-			return fmt.Errorf("could not create veth pair: %s", err)
-		}
-
-		err = nl.Netlink.LinkSetNsFd(sandboxLink, int(sandboxNamespaceFile.Fd()))
-		if err != nil {
-			return fmt.Errorf("failed to move veth peer into sandbox: %s", err)
-		}
-
-		err = addressManager.AddAddress(containerLink, &ipamResult.IP4.IP)
-		if err != nil {
-			return fmt.Errorf("adding address to container veth end: %s", err)
-		}
-
-		err = nl.Netlink.LinkSetUp(containerLink)
-		if err != nil {
-			return fmt.Errorf("upping container veth end: %s", err)
-		}
-
-		for _, route := range ipamResult.IP4.Routes {
-			// TODO supporting gateway assigned to a particular route
-			nlRoute := &netlink.Route{
-				LinkIndex: containerLink.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Dst:       &route.Dst,
-				Gw:        ipamResult.IP4.Gateway,
-			}
-			err = nl.Netlink.RouteAdd(nlRoute)
-			if err != nil {
-				return fmt.Errorf("adding routes: %s", err)
-			}
-		}
-
-		return nil
-	})
+	sandboxLink, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
 	if err != nil {
-		return fmt.Errorf("configuring container namespace: %s", err)
+		return err
 	}
 
 	vxlanName := fmt.Sprintf("vxlan%d", vni)
