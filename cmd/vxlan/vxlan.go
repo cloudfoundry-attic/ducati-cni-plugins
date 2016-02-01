@@ -114,7 +114,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	defer sandboxNamespaceFile.Close()
 
 	executor := executor.Executor{
-		NetworkNamespacer: ns.Namespacer,
+		NetworkNamespacer: ns.LinuxNamespacer,
 		LinkFactory:       linkFactory,
 		Netlinker:         nl.Netlink,
 		AddressManager:    addressManager,

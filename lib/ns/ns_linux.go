@@ -13,7 +13,7 @@ type handle struct {
 	closed bool
 }
 
-var Namespacer = &ns{}
+var LinuxNamespacer = &ns{}
 
 func (*ns) GetFromPath(path string) (Handle, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY, 0)
