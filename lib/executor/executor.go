@@ -28,6 +28,8 @@ type AddressManager interface {
 	AddAddress(link netlink.Link, address *net.IPNet) error
 }
 
+const selfPath = "/proc/self/ns/net"
+
 func (e *Executor) SetupContainerNS(
 	sandboxNsPath string,
 	containerNsPath string,
@@ -35,6 +37,11 @@ func (e *Executor) SetupContainerNS(
 	interfaceName string,
 	ipamResult *types.Result,
 ) (netlink.Link, error) {
+	hostNsHandle, err := e.NetworkNamespacer.GetFromPath(selfPath)
+	if err != nil {
+		panic(err)
+	}
+	defer e.restoreAndCloseNamespace(hostNsHandle)
 
 	containerNsHandle, err := e.NetworkNamespacer.GetFromPath(containerNsPath)
 	if err != nil {
@@ -93,4 +100,16 @@ func (e *Executor) SetupContainerNS(
 	}
 
 	return sandboxLink, nil
+}
+
+func (e *Executor) restoreAndCloseNamespace(handle ns.Handle) {
+	err := e.NetworkNamespacer.Set(handle)
+	if err != nil {
+		panic(err)
+	}
+
+	err = handle.Close()
+	if err != nil {
+		panic(err)
+	}
 }
