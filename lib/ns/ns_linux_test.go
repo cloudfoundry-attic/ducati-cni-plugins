@@ -13,10 +13,10 @@ import (
 )
 
 var _ = Describe("Linux network namespace", func() {
-	var namespacer ns.NetworkNamespacer
+	var namespacer ns.Namespacer
 
 	BeforeEach(func() {
-		namespacer = ns.Namespacer
+		namespacer = ns.LinuxNamespacer
 	})
 
 	Describe("GetFromPath", func() {

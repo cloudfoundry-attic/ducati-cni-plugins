@@ -7,8 +7,8 @@ type Handle interface {
 	Fd() uintptr
 }
 
-//go:generate counterfeiter --fake-name NetworkNamespacer . NetworkNamespacer
-type NetworkNamespacer interface {
+//go:generate counterfeiter --fake-name Namespacer . Namespacer
+type Namespacer interface {
 	GetFromPath(string) (Handle, error)
 	Set(Handle) error
 }
