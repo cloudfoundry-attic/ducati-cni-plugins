@@ -2,9 +2,7 @@ package executor_test
 
 import (
 	"errors"
-	"io/ioutil"
 	"net"
-	"os"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor/fakes"
@@ -40,11 +38,9 @@ var _ = Describe("SetupContainerNS", func() {
 		netlinker         *nl_fakes.Netlinker
 		addressManager    *fakes.AddressManager
 
-		sandboxNamespaceFile   *os.File
-		containerNamespaceFile *os.File
-
 		sandboxNsHandle   *ns_fakes.Handle
 		containerNsHandle *ns_fakes.Handle
+		hostHandle        *ns_fakes.Handle
 
 		sandboxFd uintptr
 
@@ -66,18 +62,12 @@ var _ = Describe("SetupContainerNS", func() {
 			AddressManager:    addressManager,
 		}
 
-		var err error
-		sandboxNamespaceFile, err = ioutil.TempFile("", "sandbox")
-		Expect(err).NotTo(HaveOccurred())
-
-		containerNamespaceFile, err = ioutil.TempFile("", "container")
-		Expect(err).NotTo(HaveOccurred())
-
 		sandboxFd = 9999
 		sandboxNsHandle = &ns_fakes.Handle{}
 		sandboxNsHandle.FdReturns(sandboxFd)
 
 		containerNsHandle = &ns_fakes.Handle{}
+		hostHandle = &ns_fakes.Handle{}
 
 		networkNamespacer.GetFromPathStub = func(ns string) (ns.Handle, error) {
 			switch ns {
@@ -85,6 +75,8 @@ var _ = Describe("SetupContainerNS", func() {
 				return sandboxNsHandle, nil
 			case "/var/some/container/namespace":
 				return containerNsHandle, nil
+			case "/proc/self/ns/net":
+				return hostHandle, nil
 			default:
 				return &ns_fakes.Handle{}, nil
 			}
@@ -117,22 +109,20 @@ var _ = Describe("SetupContainerNS", func() {
 		}
 	})
 
-	AfterEach(func() {
-		sandboxNamespaceFile.Close()
-		containerNamespaceFile.Close()
-	})
-
 	It("should construct the network inside the container namespace", func() {
 		sandboxLink, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sandboxLink.Attrs().Name).To(Equal("sandbox-link"))
 
+		By("asking for the host namespace handle")
+		Expect(networkNamespacer.GetFromPathCallCount()).To(Equal(3))
+		Expect(networkNamespacer.GetFromPathArgsForCall(0)).To(Equal("/proc/self/ns/net"))
+
 		By("asking for the container namespace handle")
-		Expect(networkNamespacer.GetFromPathCallCount()).To(Equal(2))
-		Expect(networkNamespacer.GetFromPathArgsForCall(0)).To(Equal("/var/some/container/namespace"))
+		Expect(networkNamespacer.GetFromPathArgsForCall(1)).To(Equal("/var/some/container/namespace"))
 
 		By("switch to the container namespace via the handle")
-		Expect(networkNamespacer.SetCallCount()).To(Equal(1))
+		Expect(networkNamespacer.SetCallCount()).To(Equal(2))
 		Expect(networkNamespacer.SetArgsForCall(0)).To(Equal(containerNsHandle))
 
 		By("creating a veth pair when the container namespace")
@@ -143,7 +133,7 @@ var _ = Describe("SetupContainerNS", func() {
 		Expect(vxlanVethMTU).To(Equal(1450))
 
 		By("getting the sandbox namespace")
-		Expect(networkNamespacer.GetFromPathArgsForCall(1)).To(Equal("/var/some/sandbox/namespace"))
+		Expect(networkNamespacer.GetFromPathArgsForCall(2)).To(Equal("/var/some/sandbox/namespace"))
 
 		By("moving the sandboxlink into the sandbox namespace")
 		Expect(netlinker.LinkSetNsFdCallCount()).To(Equal(1))
@@ -168,6 +158,14 @@ var _ = Describe("SetupContainerNS", func() {
 		Expect(route.Scope).To(Equal(netlink.SCOPE_UNIVERSE))
 		Expect(route.Dst).To(Equal(&result.IP4.Routes[0].Dst))
 		Expect(route.Gw).To(Equal(result.IP4.Routes[0].GW))
+
+		By("setting namespace back to host namespace")
+		Expect(networkNamespacer.SetArgsForCall(1)).To(Equal(hostHandle))
+
+		By("closing the handles")
+		Expect(hostHandle.CloseCallCount()).To(Equal(1))
+		Expect(sandboxNsHandle.CloseCallCount()).To(Equal(1))
+		Expect(containerNsHandle.CloseCallCount()).To(Equal(1))
 	})
 
 	Context("when no routes are specified", func() {
@@ -232,7 +230,13 @@ var _ = Describe("SetupContainerNS", func() {
 
 	Context("when opening the container namespace fails", func() {
 		BeforeEach(func() {
-			networkNamespacer.GetFromPathReturns(nil, errors.New("failed to open"))
+			networkNamespacer.GetFromPathStub = func(path string) (ns.Handle, error) {
+				if path == "/var/some/container/namespace" {
+					return nil, errors.New("failed to open")
+				}
+
+				return hostHandle, nil
+			}
 		})
 
 		It("wraps the error with a helpful message", func() {
@@ -244,7 +248,12 @@ var _ = Describe("SetupContainerNS", func() {
 
 	Context("when setting the namespace fails", func() {
 		BeforeEach(func() {
-			networkNamespacer.SetReturns(errors.New("original set error"))
+			networkNamespacer.SetStub = func(handle ns.Handle) error {
+				if handle == containerNsHandle {
+					return errors.New("original set error")
+				}
+				return nil
+			}
 		})
 
 		It("wraps the error with a helpful message", func() {
@@ -278,6 +287,8 @@ var _ = Describe("SetupContainerNS", func() {
 				switch ns {
 				case "/var/some/container/namespace":
 					return containerNsHandle, nil
+				case "/proc/self/ns/net":
+					return hostHandle, nil
 				default:
 					return &ns_fakes.Handle{}, errors.New("wow, a failure")
 				}
