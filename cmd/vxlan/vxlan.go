@@ -16,6 +16,7 @@ import (
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns" //only only on linux - ignore error
 	"github.com/vishvananda/netlink"
 )
 
@@ -104,6 +105,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	addressManager := &ip.AddressManager{Netlinker: nl.Netlink}
 
+	containerNS := namespace.NewNamespace(args.Netns)
+
 	sandboxNamespaceFile, err := sandboxNS.Open()
 	if err != nil {
 		return fmt.Errorf("opening sandbox namespace: %s", err)
@@ -111,16 +114,15 @@ func cmdAdd(args *skel.CmdArgs) error {
 	defer sandboxNamespaceFile.Close()
 
 	executor := executor.Executor{
-		ContainerNS:    namespace.NewNamespace(args.Netns),
-		SandboxNS:      sandboxNS,
-		LinkFactory:    linkFactory,
-		Netlinker:      nl.Netlink,
-		AddressManager: addressManager,
+		NetworkNamespacer: ns.Namespacer,
+		LinkFactory:       linkFactory,
+		Netlinker:         nl.Netlink,
+		AddressManager:    addressManager,
 	}
 
-	sandboxLink, err = executor.SetupContainerNS(args.ContainerID, args.IfName, ipamResult)
+	sandboxLink, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	vxlanName := fmt.Sprintf("vxlan%d", vni)

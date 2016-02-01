@@ -4,11 +4,11 @@ package fakes
 import (
 	"sync"
 
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns"
 	"github.com/vishvananda/netns"
 )
 
-type Namespacer struct {
+type NetworkNamespacer struct {
 	GetFromPathStub        func(string) (netns.NsHandle, error)
 	getFromPathMutex       sync.RWMutex
 	getFromPathArgsForCall []struct {
@@ -28,7 +28,7 @@ type Namespacer struct {
 	}
 }
 
-func (fake *Namespacer) GetFromPath(arg1 string) (netns.NsHandle, error) {
+func (fake *NetworkNamespacer) GetFromPath(arg1 string) (netns.NsHandle, error) {
 	fake.getFromPathMutex.Lock()
 	fake.getFromPathArgsForCall = append(fake.getFromPathArgsForCall, struct {
 		arg1 string
@@ -41,19 +41,19 @@ func (fake *Namespacer) GetFromPath(arg1 string) (netns.NsHandle, error) {
 	}
 }
 
-func (fake *Namespacer) GetFromPathCallCount() int {
+func (fake *NetworkNamespacer) GetFromPathCallCount() int {
 	fake.getFromPathMutex.RLock()
 	defer fake.getFromPathMutex.RUnlock()
 	return len(fake.getFromPathArgsForCall)
 }
 
-func (fake *Namespacer) GetFromPathArgsForCall(i int) string {
+func (fake *NetworkNamespacer) GetFromPathArgsForCall(i int) string {
 	fake.getFromPathMutex.RLock()
 	defer fake.getFromPathMutex.RUnlock()
 	return fake.getFromPathArgsForCall[i].arg1
 }
 
-func (fake *Namespacer) GetFromPathReturns(result1 netns.NsHandle, result2 error) {
+func (fake *NetworkNamespacer) GetFromPathReturns(result1 netns.NsHandle, result2 error) {
 	fake.GetFromPathStub = nil
 	fake.getFromPathReturns = struct {
 		result1 netns.NsHandle
@@ -61,7 +61,7 @@ func (fake *Namespacer) GetFromPathReturns(result1 netns.NsHandle, result2 error
 	}{result1, result2}
 }
 
-func (fake *Namespacer) Set(arg1 netns.NsHandle) error {
+func (fake *NetworkNamespacer) Set(arg1 netns.NsHandle) error {
 	fake.setMutex.Lock()
 	fake.setArgsForCall = append(fake.setArgsForCall, struct {
 		arg1 netns.NsHandle
@@ -74,23 +74,23 @@ func (fake *Namespacer) Set(arg1 netns.NsHandle) error {
 	}
 }
 
-func (fake *Namespacer) SetCallCount() int {
+func (fake *NetworkNamespacer) SetCallCount() int {
 	fake.setMutex.RLock()
 	defer fake.setMutex.RUnlock()
 	return len(fake.setArgsForCall)
 }
 
-func (fake *Namespacer) SetArgsForCall(i int) netns.NsHandle {
+func (fake *NetworkNamespacer) SetArgsForCall(i int) netns.NsHandle {
 	fake.setMutex.RLock()
 	defer fake.setMutex.RUnlock()
 	return fake.setArgsForCall[i].arg1
 }
 
-func (fake *Namespacer) SetReturns(result1 error) {
+func (fake *NetworkNamespacer) SetReturns(result1 error) {
 	fake.SetStub = nil
 	fake.setReturns = struct {
 		result1 error
 	}{result1}
 }
 
-var _ executor.Namespacer = new(Namespacer)
+var _ ns.NetworkNamespacer = new(NetworkNamespacer)

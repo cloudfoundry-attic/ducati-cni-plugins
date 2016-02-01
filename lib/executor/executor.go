@@ -2,24 +2,24 @@ package executor
 
 import (
 	"net"
-	"os"
 
 	"github.com/appc/cni/pkg/types"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 )
 
 type Executor struct {
-	ContainerNS    Namespacer
-	SandboxNS      Namespacer
-	LinkFactory    LinkFactory
-	Netlinker      Netlinker
-	AddressManager AddressManager
+	NetworkNamespacer Namespacer
+	LinkFactory       LinkFactory
+	Netlinker         Netlinker
+	AddressManager    AddressManager
 }
 
 //go:generate counterfeiter --fake-name Namespacer . Namespacer
 type Namespacer interface {
-	Open() (*os.File, error)
-	Execute(func(*os.File) error) error
+	GetFromPath(string) (netns.NsHandle, error)
+	Set(netns.NsHandle) error
 }
 
 //go:generate counterfeiter --fake-name Netlinker . Netlinker
@@ -39,58 +39,54 @@ type AddressManager interface {
 	AddAddress(link netlink.Link, address *net.IPNet) error
 }
 
-func (e *Executor) SetupContainerNS(containerID string, interfaceName string, ipamResult *types.Result) (netlink.Link, error) {
-	//containerNamespaceFile, err := containerNS.Open()
-	//if err != nil {
-	//return fmt.Errorf("opening container namespace: %s", err)
-	//}
-	//defer containerNamespaceFile.Close()
+func (e *Executor) SetupContainerNS(sandboxNsPath string,
+	containerNsPath string, containerID string, interfaceName string, ipamResult *types.Result) (netlink.Link, error) {
 
-	//err = containerNS.Execute(func(ns *os.File) error {
-	//var (
-	//containerLink netlink.Link
-	//err           error
-	//)
+	containerNsHandle, err := e.NetworkNamespacer.GetFromPath(containerNsPath)
+	if err != nil {
+		//return fmt.Errorf("could not create veth pair: %s", err)
+	}
 
-	//sandboxLink, containerLink, err = linkFactory.CreateVethPair(args.ContainerID, args.IfName, links.VxlanVethMTU)
-	//if err != nil {
-	//return fmt.Errorf("could not create veth pair: %s", err)
-	//}
+	err = e.NetworkNamespacer.Set(containerNsHandle)
 
-	//err = nl.Netlink.LinkSetNsFd(sandboxLink, int(sandboxNamespaceFile.Fd()))
-	//if err != nil {
-	//return fmt.Errorf("failed to move veth peer into sandbox: %s", err)
-	//}
+	sandboxLink, containerLink, err := e.LinkFactory.CreateVethPair(containerID, interfaceName, links.VxlanVethMTU)
+	if err != nil {
+		//return fmt.Errorf("could not create veth pair: %s", err)
+	}
 
-	//err = addressManager.AddAddress(containerLink, &ipamResult.IP4.IP)
-	//if err != nil {
-	//return fmt.Errorf("adding address to container veth end: %s", err)
-	//}
+	sandboxNsHandle, err := e.NetworkNamespacer.GetFromPath(sandboxNsPath)
+	if err != nil {
+		//return fmt.Errorf("could not create veth pair: %s", err)
+	}
 
-	//err = nl.Netlink.LinkSetUp(containerLink)
-	//if err != nil {
-	//return fmt.Errorf("upping container veth end: %s", err)
-	//}
+	err = e.Netlinker.LinkSetNsFd(sandboxLink, int(sandboxNsHandle))
+	if err != nil {
+		//return fmt.Errorf("failed to move veth peer into sandbox: %s", err)
+	}
 
-	//for _, route := range ipamResult.IP4.Routes {
-	//// TODO supporting gateway assigned to a particular route
-	//nlRoute := &netlink.Route{
-	//LinkIndex: containerLink.Attrs().Index,
-	//Scope:     netlink.SCOPE_UNIVERSE,
-	//Dst:       &route.Dst,
-	//Gw:        ipamResult.IP4.Gateway,
-	//}
-	//err = nl.Netlink.RouteAdd(nlRoute)
-	//if err != nil {
-	//return fmt.Errorf("adding routes: %s", err)
-	//}
-	//}
+	err = e.AddressManager.AddAddress(containerLink, &ipamResult.IP4.IP)
+	if err != nil {
+		//return fmt.Errorf("adding address to container veth end: %s", err)
+	}
 
-	//return nil
-	//})
-	//if err != nil {
-	//return fmt.Errorf("configuring container namespace: %s", err)
-	//}
+	err = e.Netlinker.LinkSetUp(containerLink)
+	if err != nil {
+		//return fmt.Errorf("upping container veth end: %s", err)
+	}
 
-	return nil, nil
+	for _, route := range ipamResult.IP4.Routes {
+		// TODO supporting gateway assigned to a particular route
+		nlRoute := &netlink.Route{
+			LinkIndex: containerLink.Attrs().Index,
+			Scope:     netlink.SCOPE_UNIVERSE,
+			Dst:       &route.Dst,
+			Gw:        ipamResult.IP4.Gateway,
+		}
+		err = e.Netlinker.RouteAdd(nlRoute)
+		if err != nil {
+			// return fmt.Errorf("adding routes: %s", err)
+		}
+	}
+
+	return sandboxLink, nil
 }
