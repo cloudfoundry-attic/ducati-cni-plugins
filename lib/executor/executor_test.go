@@ -103,14 +103,14 @@ var _ = Describe("SetupContainerNS", func() {
 					IP:   net.ParseIP("192.168.100.1"),
 					Mask: net.ParseIP("192.168.100.1").DefaultMask(),
 				},
-				Gateway: net.ParseIP("0.0.0.0"),
+				Gateway: net.ParseIP("192.168.100.1"),
 				Routes: []types.Route{
 					{
 						Dst: net.IPNet{
-							IP:   net.ParseIP("192.168.100.1"),
-							Mask: net.ParseIP("192.168.100.1").DefaultMask(),
+							IP:   net.ParseIP("192.168.1.5"),
+							Mask: net.ParseIP("192.168.1.5").DefaultMask(),
 						},
-						GW: net.ParseIP("192.168.100.1"),
+						GW: net.ParseIP("192.168.1.1"),
 					},
 				},
 			},
@@ -167,7 +167,7 @@ var _ = Describe("SetupContainerNS", func() {
 		Expect(route.LinkIndex).To(Equal(1555))
 		Expect(route.Scope).To(Equal(netlink.SCOPE_UNIVERSE))
 		Expect(route.Dst).To(Equal(&result.IP4.Routes[0].Dst))
-		Expect(route.Gw).To(Equal(result.IP4.Gateway))
+		Expect(route.Gw).To(Equal(result.IP4.Routes[0].GW))
 	})
 
 	Context("when no routes are specified", func() {
@@ -201,12 +201,31 @@ var _ = Describe("SetupContainerNS", func() {
 			Expect(route.LinkIndex).To(Equal(1555))
 			Expect(route.Scope).To(Equal(netlink.SCOPE_UNIVERSE))
 			Expect(route.Dst).To(Equal(&result.IP4.Routes[0].Dst))
-			Expect(route.Gw).To(Equal(result.IP4.Gateway))
+			Expect(route.Gw).To(Equal(result.IP4.Routes[0].GW))
 
 			route = netlinker.RouteAddArgsForCall(1)
 			Expect(route.LinkIndex).To(Equal(1555))
 			Expect(route.Scope).To(Equal(netlink.SCOPE_UNIVERSE))
 			Expect(route.Dst).To(Equal(&result.IP4.Routes[1].Dst))
+			Expect(route.Gw).To(Equal(result.IP4.Routes[1].GW))
+		})
+	})
+
+	Context("When a gateway is missing from the the route", func() {
+		BeforeEach(func() {
+			result.IP4.Routes[0].GW = nil
+		})
+
+		It("uses the default gateway for the route", func() {
+			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(netlinker.RouteAddCallCount()).To(Equal(1))
+
+			route := netlinker.RouteAddArgsForCall(0)
+			Expect(route.LinkIndex).To(Equal(1555))
+			Expect(route.Scope).To(Equal(netlink.SCOPE_UNIVERSE))
+			Expect(route.Dst).To(Equal(&result.IP4.Routes[0].Dst))
 			Expect(route.Gw).To(Equal(result.IP4.Gateway))
 		})
 	})
@@ -322,7 +341,7 @@ var _ = Describe("SetupContainerNS", func() {
 		It("wraps the error with a helpful message", func() {
 			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
-			Expect(err).To(MatchError(`adding route to 192.168.100.1/24 via 0.0.0.0 failed: invalid destination`))
+			Expect(err).To(MatchError(`adding route to 192.168.1.5/24 via 192.168.1.1 failed: invalid destination`))
 		})
 	})
 })

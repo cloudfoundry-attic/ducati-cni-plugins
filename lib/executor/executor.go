@@ -74,14 +74,18 @@ func (e *Executor) SetupContainerNS(
 	}
 
 	for _, r := range ipamResult.IP4.Routes {
-		// TODO supporting gateway assigned to a particular route
 		route := r
 		nlRoute := &netlink.Route{
 			LinkIndex: containerLink.Attrs().Index,
 			Scope:     netlink.SCOPE_UNIVERSE,
 			Dst:       &route.Dst,
-			Gw:        ipamResult.IP4.Gateway,
+			Gw:        route.GW,
 		}
+
+		if nlRoute.Gw == nil {
+			nlRoute.Gw = ipamResult.IP4.Gateway
+		}
+
 		err = e.Netlinker.RouteAdd(nlRoute)
 		if err != nil {
 			return nil, fmt.Errorf("adding route to %s via %s failed: %s", nlRoute.Dst, nlRoute.Gw, err)
