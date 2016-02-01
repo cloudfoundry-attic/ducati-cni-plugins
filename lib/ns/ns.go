@@ -1,9 +1,14 @@
 package ns
 
-import "github.com/vishvananda/netns"
+//go:generate counterfeiter --fake-name Handle . Handle
+type Handle interface {
+	Close() error
+	IsOpen() bool
+	Fd() uintptr
+}
 
 //go:generate counterfeiter --fake-name NetworkNamespacer . NetworkNamespacer
 type NetworkNamespacer interface {
-	GetFromPath(string) (netns.NsHandle, error)
-	Set(netns.NsHandle) error
+	GetFromPath(string) (Handle, error)
+	Set(Handle) error
 }
