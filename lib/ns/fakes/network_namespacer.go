@@ -5,30 +5,29 @@ import (
 	"sync"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns"
-	"github.com/vishvananda/netns"
 )
 
 type NetworkNamespacer struct {
-	GetFromPathStub        func(string) (netns.NsHandle, error)
+	GetFromPathStub        func(string) (ns.Handle, error)
 	getFromPathMutex       sync.RWMutex
 	getFromPathArgsForCall []struct {
 		arg1 string
 	}
 	getFromPathReturns struct {
-		result1 netns.NsHandle
+		result1 ns.Handle
 		result2 error
 	}
-	SetStub        func(netns.NsHandle) error
+	SetStub        func(ns.Handle) error
 	setMutex       sync.RWMutex
 	setArgsForCall []struct {
-		arg1 netns.NsHandle
+		arg1 ns.Handle
 	}
 	setReturns struct {
 		result1 error
 	}
 }
 
-func (fake *NetworkNamespacer) GetFromPath(arg1 string) (netns.NsHandle, error) {
+func (fake *NetworkNamespacer) GetFromPath(arg1 string) (ns.Handle, error) {
 	fake.getFromPathMutex.Lock()
 	fake.getFromPathArgsForCall = append(fake.getFromPathArgsForCall, struct {
 		arg1 string
@@ -53,18 +52,18 @@ func (fake *NetworkNamespacer) GetFromPathArgsForCall(i int) string {
 	return fake.getFromPathArgsForCall[i].arg1
 }
 
-func (fake *NetworkNamespacer) GetFromPathReturns(result1 netns.NsHandle, result2 error) {
+func (fake *NetworkNamespacer) GetFromPathReturns(result1 ns.Handle, result2 error) {
 	fake.GetFromPathStub = nil
 	fake.getFromPathReturns = struct {
-		result1 netns.NsHandle
+		result1 ns.Handle
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *NetworkNamespacer) Set(arg1 netns.NsHandle) error {
+func (fake *NetworkNamespacer) Set(arg1 ns.Handle) error {
 	fake.setMutex.Lock()
 	fake.setArgsForCall = append(fake.setArgsForCall, struct {
-		arg1 netns.NsHandle
+		arg1 ns.Handle
 	}{arg1})
 	fake.setMutex.Unlock()
 	if fake.SetStub != nil {
@@ -80,7 +79,7 @@ func (fake *NetworkNamespacer) SetCallCount() int {
 	return len(fake.setArgsForCall)
 }
 
-func (fake *NetworkNamespacer) SetArgsForCall(i int) netns.NsHandle {
+func (fake *NetworkNamespacer) SetArgsForCall(i int) ns.Handle {
 	fake.setMutex.RLock()
 	defer fake.setMutex.RUnlock()
 	return fake.setArgsForCall[i].arg1
