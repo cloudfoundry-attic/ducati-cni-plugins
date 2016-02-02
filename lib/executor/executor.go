@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl"
@@ -94,7 +96,7 @@ func (e *Executor) SetupContainerNS(
 		}
 
 		err = e.Netlinker.RouteAdd(nlRoute)
-		if err != nil {
+		if err != nil && err != unix.EEXIST {
 			return nil, fmt.Errorf("adding route to %s via %s failed: %s", nlRoute.Dst, nlRoute.Gw, err)
 		}
 	}

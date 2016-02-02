@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor/fakes"
 	nl_fakes "github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl/fakes"
@@ -344,7 +346,33 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 	})
 
-	Context("when adding routes fails", func() {
+	Context("when adding a route fails with EEXIST", func() {
+		BeforeEach(func() {
+			result.IP4.Routes = append(result.IP4.Routes, types.Route{
+				Dst: net.IPNet{
+					IP:   net.ParseIP("10.10.10.10"),
+					Mask: net.CIDRMask(8, 32),
+				},
+				GW: net.ParseIP("10.10.10.1"),
+			})
+
+			netlinker.RouteAddStub = func(*netlink.Route) error {
+				if netlinker.RouteAddCallCount() == 1 {
+					return unix.EEXIST
+				}
+				return nil
+			}
+		})
+
+		It("proceeds to the next route without failing", func() {
+			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(netlinker.RouteAddCallCount()).To(Equal(2))
+		})
+	})
+
+	Context("when adding routes fails with something other than EEXIST", func() {
 		BeforeEach(func() {
 			netlinker.RouteAddReturns(errors.New("invalid destination"))
 		})
