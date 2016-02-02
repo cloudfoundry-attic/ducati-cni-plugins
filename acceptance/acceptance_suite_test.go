@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
@@ -90,4 +92,28 @@ func removeNetworkNamespace(name string) {
 	cmd := exec.Command("ip", "netns", "delete", name)
 	err := cmd.Run()
 	Expect(err).NotTo(HaveOccurred())
+}
+
+var execCNI = func(operation string, netConfig Config, containerNS namespace.Namespace,
+	containerID, sandboxRepoDir string) (namespace.Namespace, *gexec.Session) {
+
+	input, err := json.Marshal(netConfig)
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command(pathToVxlan)
+	cmd.Stdin = bytes.NewReader(input)
+	cmd.Env = append(
+		os.Environ(),
+		fmt.Sprintf("CNI_COMMAND=%s", operation),
+		fmt.Sprintf("CNI_CONTAINERID=%s", containerID),
+		fmt.Sprintf("CNI_PATH=%s", cniPath),
+		fmt.Sprintf("CNI_NETNS=%s", containerNS.Path()),
+		fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
+		fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxRepoDir),
+	)
+
+	session, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred())
+
+	return namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni))), session
 }
