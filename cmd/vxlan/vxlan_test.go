@@ -397,137 +397,134 @@ var _ = Describe("vxlan", func() {
 	})
 
 	Describe("DEL", func() {
-		var containerAddress string
+		Context("when delete goes smoothly", func() {
+			var containerAddress string
 
-		BeforeEach(func() {
-			execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
-			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+			BeforeEach(func() {
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-			var result types.Result
-			err := json.Unmarshal(session.Out.Contents(), &result)
-			Expect(err).NotTo(HaveOccurred())
+				var result types.Result
+				err := json.Unmarshal(session.Out.Contents(), &result)
+				Expect(err).NotTo(HaveOccurred())
 
-			containerAddress = result.IP4.IP.IP.String()
-		})
-
-		Context("when errors occur", func() {
-			Context("when the container namespace is invalid", func() {
-				It("should return an error", func() {
-					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
-					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
-
-					execCNI("DEL", netConfig, namespace.NewNamespace("bad-path"), containerID, sandboxRepoDir)
-					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-					Expect(session.Out.Contents()).To(ContainSubstring("failed to delete link in container namespace"))
-				})
+				containerAddress = result.IP4.IP.IP.String()
 			})
 
-			Context("when the sandbox repository cannot be acquired", func() {
-				It("returns an error", func() {
-					execCNI("DEL", netConfig, containerNS, containerID, "")
-					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-					Expect(session.Out.Contents()).To(ContainSubstring("failed to open sandbox repository"))
-				})
-
-				AfterEach(func() {
-					// cleanup the vxlan made during the BeforeEach ADD
-					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
-					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
-				})
-			})
-
-			Context("when the sandbox namespace no longer exists", func() {
-				BeforeEach(func() {
-					err := sandboxNS.Destroy()
-					Expect(err).NotTo(HaveOccurred())
-				})
-
-				It("returns an error", func() {
-					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
-					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-					Expect(session.Out.Contents()).To(ContainSubstring("failed to get sandbox namespace"))
-				})
-			})
-		})
-
-		It("should release the IPAM managed address", func() {
-			execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
-			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
-
-			addressPath := filepath.Join("/var/lib/cni/networks", "test-network", containerAddress)
-			_, err := os.Open(addressPath)
-			Expect(err).To(HaveOccurred())
-			Expect(os.IsNotExist(err)).To(BeTrue())
-		})
-
-		Context("when the last container leaves the network", func() {
-			It("should remove the sandboxNS", func() {
+			It("should release the IPAM managed address", func() {
 				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-				_, err := sandboxNS.Open()
+				addressPath := filepath.Join("/var/lib/cni/networks", "test-network", containerAddress)
+				_, err := os.Open(addressPath)
 				Expect(err).To(HaveOccurred())
 				Expect(os.IsNotExist(err)).To(BeTrue())
 			})
+
+			Context("when the last container leaves the network", func() {
+				It("should remove the sandboxNS", func() {
+					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+
+					_, err := sandboxNS.Open()
+					Expect(err).To(HaveOccurred())
+					Expect(os.IsNotExist(err)).To(BeTrue())
+				})
+			})
+
+			Context("when a container remains attached to the sandbox", func() {
+				var containerNS2 namespace.Namespace
+
+				BeforeEach(func() {
+					var err error
+					containerNS2, err = namespaceRepo.Create("container-ns-2")
+					Expect(err).NotTo(HaveOccurred())
+
+					execCNI("ADD", netConfig, containerNS2, "guid-2", sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+				})
+
+				AfterEach(func() {
+					execCNI("DEL", netConfig, containerNS2, "guid-2", sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+				})
+
+				It("should remove the veth pair from the container and sandbox namespaces", func() {
+					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+
+					err := containerNS.Execute(func(_ *os.File) error {
+						_, err := netlink.LinkByName("vx-eth0")
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError("Link not found"))
+						return nil
+					})
+					Expect(err).NotTo(HaveOccurred())
+
+					err = sandboxNS.Execute(func(_ *os.File) error {
+						_, err := netlink.LinkByName(containerID)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError("Link not found"))
+						return nil
+					})
+					Expect(err).NotTo(HaveOccurred())
+				})
+
+				It("should preserve the veth pairs for other attached containers", func() {
+					execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+					Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+
+					err := containerNS2.Execute(func(_ *os.File) error {
+						_, err := netlink.LinkByName("vx-eth0")
+						Expect(err).NotTo(HaveOccurred())
+						return nil
+					})
+					Expect(err).NotTo(HaveOccurred())
+
+					err = sandboxNS.Execute(func(_ *os.File) error {
+						_, err := netlink.LinkByName("guid-2")
+						Expect(err).NotTo(HaveOccurred())
+						return nil
+					})
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
 		})
 
-		Context("when a container remains attached to the sandbox", func() {
-			var containerNS2 namespace.Namespace
-
+		Context("when the container namespace is invalid", func() {
 			BeforeEach(func() {
-				var err error
-				containerNS2, err = namespaceRepo.Create("container-ns-2")
+				execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+
+				var result types.Result
+				err := json.Unmarshal(session.Out.Contents(), &result)
 				Expect(err).NotTo(HaveOccurred())
-
-				execCNI("ADD", netConfig, containerNS2, "guid-2", sandboxRepoDir)
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 			})
 
-			AfterEach(func() {
-				execCNI("DEL", netConfig, containerNS2, "guid-2", sandboxRepoDir)
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
-			})
-
-			It("should remove the veth pair from the container and sandbox namespaces", func() {
+			It("should return an error", func() {
 				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-				err := containerNS.Execute(func(_ *os.File) error {
-					_, err := netlink.LinkByName("vx-eth0")
-					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError("Link not found"))
-					return nil
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				err = sandboxNS.Execute(func(_ *os.File) error {
-					_, err := netlink.LinkByName(containerID)
-					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError("Link not found"))
-					return nil
-				})
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("should preserve the veth pairs for other attached containers", func() {
-				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
-
-				err := containerNS2.Execute(func(_ *os.File) error {
-					_, err := netlink.LinkByName("vx-eth0")
-					Expect(err).NotTo(HaveOccurred())
-					return nil
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				err = sandboxNS.Execute(func(_ *os.File) error {
-					_, err := netlink.LinkByName("guid-2")
-					Expect(err).NotTo(HaveOccurred())
-					return nil
-				})
-				Expect(err).NotTo(HaveOccurred())
+				execCNI("DEL", netConfig, namespace.NewNamespace("bad-path"), containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+				Expect(session.Out.Contents()).To(ContainSubstring("failed to delete link in container namespace"))
 			})
 		})
 
+		Context("when the sandbox repository cannot be acquired", func() {
+			It("returns an error", func() {
+				execCNI("DEL", netConfig, containerNS, containerID, "")
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+				Expect(session.Out.Contents()).To(ContainSubstring("failed to open sandbox repository"))
+			})
+		})
+
+		Context("when the sandbox namespace no longer exists", func() {
+			It("returns an error", func() {
+				execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+				Expect(session.Out.Contents()).To(ContainSubstring("failed to get sandbox namespace"))
+			})
+		})
 	})
 })
