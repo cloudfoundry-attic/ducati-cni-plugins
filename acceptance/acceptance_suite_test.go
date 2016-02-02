@@ -1,4 +1,4 @@
-package main_test
+package acceptance_test
 
 import (
 	"encoding/json"
@@ -17,7 +17,7 @@ import (
 
 func TestVxlan(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Vxlan Suite")
+	RunSpecs(t, "Vxlan Acceptance Suite")
 }
 
 var pathToVxlan, cniPath string
@@ -34,13 +34,10 @@ var _ = SynchronizedBeforeSuite(
 			Skip("Cannot run suite for non linux platform: " + runtime.GOOS)
 		}
 
-		wd, err := os.Getwd()
-		Expect(err).NotTo(HaveOccurred())
-
-		cniDir := filepath.Join(wd, "../../../../appc/cni")
+		cniDir := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "appc", "cni")
 		cmd := exec.Command("/bin/sh", filepath.Join(cniDir, "build"))
 		cmd.Dir = cniDir
-		err = cmd.Run()
+		err := cmd.Run()
 		Expect(err).NotTo(HaveOccurred())
 
 		// race detector doesn't work with cgo in go 1.5
