@@ -86,7 +86,11 @@ var _ = Describe("vxlan", func() {
 
 		server = ghttp.NewServer()
 		serverURL = server.URL()
-		server.AppendHandlers(ghttp.RespondWith(http.StatusCreated, nil))
+		server.AppendHandlers(ghttp.CombineHandlers(
+			ghttp.VerifyRequest("POST", "/containers"),
+			ghttp.VerifyJSON(fmt.Sprintf(`{"id":%q}`, containerID)),
+			ghttp.RespondWith(http.StatusCreated, nil),
+		))
 	})
 
 	AfterEach(func() {
@@ -206,11 +210,6 @@ var _ = Describe("vxlan", func() {
 		})
 
 		It("saves the container info in the ducati daemon", func() {
-			server.AppendHandlers(ghttp.CombineHandlers(
-				ghttp.VerifyRequest("GET", "/containers"),
-				ghttp.VerifyJSON(fmt.Sprintf(`{"id":%s}`, containerID)),
-			))
-
 			var err error
 			var cmd *exec.Cmd
 			sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
