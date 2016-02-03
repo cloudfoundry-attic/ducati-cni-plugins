@@ -80,13 +80,18 @@ func getSandboxNS(name string) (namespace.Namespace, error) {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-	netConf, err := loadConf(args.StdinData)
-	if err != nil {
-		return fmt.Errorf("loading config: %s", err)
+	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
+	if daemonBaseURL == "" {
+		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
 	}
 
 	if args.ContainerID == "" {
 		return errors.New("CNI_CONTAINERID is required")
+	}
+
+	netConf, err := loadConf(args.StdinData)
+	if err != nil {
+		return fmt.Errorf("loading config: %s", err)
 	}
 
 	sandboxNS, err := getSandboxNS(fmt.Sprintf("vni-%d", vni))
@@ -211,10 +216,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}
 
-	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
-	if daemonBaseURL == "" {
-		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
-	}
 	c := client.New(daemonBaseURL)
 
 	container := models.Container{
