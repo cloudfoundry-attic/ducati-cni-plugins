@@ -112,7 +112,7 @@ func buildCNICmd(operation string, netConfig Config, containerNS namespace.Names
 		fmt.Sprintf("CNI_NETNS=%s", containerNS.Path()),
 		fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
 		fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxRepoDir),
-		fmt.Sprintf("DAEMON_LISTEN_ADDRESS=%s", serverURL),
+		fmt.Sprintf("DAEMON_BASE_URL=%s", serverURL),
 	)
 
 	sandboxNamespace := namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni)))

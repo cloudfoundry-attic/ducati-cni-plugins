@@ -211,7 +211,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}
 
-	c := client.New(os.Getenv("DAEMON_LISTEN_ADDRESS"))
+	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
+	if daemonBaseURL == "" {
+		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
+	}
+	c := client.New(daemonBaseURL)
 
 	container := models.Container{
 		ID: args.ContainerID,
