@@ -17,6 +17,8 @@ import (
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns" //only only on linux - ignore error
+	"github.com/cloudfoundry-incubator/ducati-daemon/client"
+	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	"github.com/vishvananda/netlink"
 )
 
@@ -207,6 +209,17 @@ func cmdAdd(args *skel.CmdArgs) error {
 	})
 	if err != nil {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
+	}
+
+	c := client.New(os.Getenv("DAEMON_LISTEN_ADDRESS"))
+
+	container := models.Container{
+		ID: args.ContainerID,
+	}
+
+	err = c.SaveContainer(container)
+	if err != nil {
+		return fmt.Errorf("saving container data to store: %s", err)
 	}
 
 	return ipamResult.Print()

@@ -94,11 +94,13 @@ func removeNetworkNamespace(name string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-var execCNI = func(operation string, netConfig Config, containerNS namespace.Namespace,
-	containerID, sandboxRepoDir string) (namespace.Namespace, *gexec.Session) {
+func buildCNICmd(operation string, netConfig Config, containerNS namespace.Namespace,
+	containerID, sandboxRepoDir, serverURL string) (namespace.Namespace, *exec.Cmd, error) {
 
 	input, err := json.Marshal(netConfig)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, nil, err
+	}
 
 	cmd := exec.Command(pathToVxlan)
 	cmd.Stdin = bytes.NewReader(input)
@@ -110,10 +112,10 @@ var execCNI = func(operation string, netConfig Config, containerNS namespace.Nam
 		fmt.Sprintf("CNI_NETNS=%s", containerNS.Path()),
 		fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
 		fmt.Sprintf("DUCATI_OS_SANDBOX_REPO=%s", sandboxRepoDir),
+		fmt.Sprintf("DAEMON_LISTEN_ADDRESS=%s", serverURL),
 	)
 
-	session, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-	Expect(err).NotTo(HaveOccurred())
+	sandboxNamespace := namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni)))
 
-	return namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni))), session
+	return sandboxNamespace, cmd, nil
 }

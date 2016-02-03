@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/onsi/gomega/gexec"
+	"github.com/onsi/gomega/ghttp"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -20,6 +22,8 @@ var _ = Describe("DEL", func() {
 	var (
 		netConfig Config
 		session   *gexec.Session
+		server    *ghttp.Server
+		serverURL string
 
 		repoDir       string
 		containerID   string
@@ -59,44 +63,63 @@ var _ = Describe("DEL", func() {
 				},
 			},
 		}
+
+		server = ghttp.NewServer()
+		serverURL = server.URL()
+		// replaced when daemon is tested in delete
+		server.AllowUnhandledRequests = true
+		server.UnhandledRequestStatusCode = 201
 	})
 
 	AfterEach(func() {
 		containerNS.Destroy()
 		sandboxNS.Destroy()
 		os.RemoveAll(repoDir)
+		server.Close()
 	})
 
 	Context("when delete goes smoothly", func() {
 		var containerAddress string
 
 		BeforeEach(func() {
-			sandboxNS, session = execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			var result types.Result
-			err := json.Unmarshal(session.Out.Contents(), &result)
+			err = json.Unmarshal(session.Out.Contents(), &result)
 			Expect(err).NotTo(HaveOccurred())
 
 			containerAddress = result.IP4.IP.IP.String()
 		})
 
 		It("should release the IPAM managed address", func() {
-			sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			addressPath := filepath.Join("/var/lib/cni/networks", "test-network", containerAddress)
-			_, err := os.Open(addressPath)
+			_, err = os.Open(addressPath)
 			Expect(err).To(HaveOccurred())
 			Expect(os.IsNotExist(err)).To(BeTrue())
 		})
 
 		Context("when the last container leaves the network", func() {
 			It("should remove the sandboxNS", func() {
-				sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				var err error
+				var cmd *exec.Cmd
+				sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-				_, err := sandboxNS.Open()
+				_, err = sandboxNS.Open()
 				Expect(err).To(HaveOccurred())
 				Expect(os.IsNotExist(err)).To(BeTrue())
 			})
@@ -110,20 +133,31 @@ var _ = Describe("DEL", func() {
 				containerNS2, err = namespaceRepo.Create("container-ns-2")
 				Expect(err).NotTo(HaveOccurred())
 
-				sandboxNS, session = execCNI("ADD", netConfig, containerNS2, "guid-2", sandboxRepoDir)
+				var cmd *exec.Cmd
+				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS2, "guid-2", sandboxRepoDir, serverURL)
+				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 			})
 
 			AfterEach(func() {
-				sandboxNS, session = execCNI("DEL", netConfig, containerNS2, "guid-2", sandboxRepoDir)
+				var err error
+				var cmd *exec.Cmd
+				sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS2, "guid-2", sandboxRepoDir, serverURL)
+				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 			})
 
 			It("should remove the veth pair from the container and sandbox namespaces", func() {
-				sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				var err error
+				var cmd *exec.Cmd
+				sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-				err := containerNS.Execute(func(_ *os.File) error {
+				err = containerNS.Execute(func(_ *os.File) error {
 					_, err := netlink.LinkByName("vx-eth0")
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("Link not found"))
@@ -141,10 +175,14 @@ var _ = Describe("DEL", func() {
 			})
 
 			It("should preserve the veth pairs for other attached containers", func() {
-				sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+				var err error
+				var cmd *exec.Cmd
+				sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-				err := containerNS2.Execute(func(_ *os.File) error {
+				err = containerNS2.Execute(func(_ *os.File) error {
 					_, err := netlink.LinkByName("vx-eth0")
 					Expect(err).NotTo(HaveOccurred())
 					return nil
@@ -163,27 +201,45 @@ var _ = Describe("DEL", func() {
 
 	Context("when the container namespace is invalid", func() {
 		BeforeEach(func() {
-			sandboxNS, session = execCNI("ADD", netConfig, containerNS, containerID, sandboxRepoDir)
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			var result types.Result
-			err := json.Unmarshal(session.Out.Contents(), &result)
+			err = json.Unmarshal(session.Out.Contents(), &result)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should return an error", func() {
-			sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-			sandboxNS, session = execCNI("DEL", netConfig, namespace.NewNamespace("bad-path"), containerID, sandboxRepoDir)
+			sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, namespace.NewNamespace("bad-path"), containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 			Expect(session.Out.Contents()).To(ContainSubstring("failed to delete link in container namespace"))
 		})
 	})
 
 	Context("when the sandbox repository cannot be acquired", func() {
+		BeforeEach(func() {
+			sandboxRepoDir = ""
+		})
+
 		It("returns an error", func() {
-			sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, "")
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 			Expect(session.Out.Contents()).To(ContainSubstring("failed to open sandbox repository"))
 		})
@@ -191,7 +247,11 @@ var _ = Describe("DEL", func() {
 
 	Context("when the sandbox namespace no longer exists", func() {
 		It("returns an error", func() {
-			sandboxNS, session = execCNI("DEL", netConfig, containerNS, containerID, sandboxRepoDir)
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 			Expect(session.Out.Contents()).To(ContainSubstring("failed to get sandbox namespace"))
 		})
