@@ -141,6 +141,7 @@ var _ = Describe("Namespace", func() {
 			var nsPath string
 
 			BeforeEach(func() {
+				Expect(os.MkdirAll("/var/run/netns", 0644)).To(Succeed())
 				nsPath = filepath.Join("/var/run/netns", "simple-file")
 				_, err := os.Create(nsPath)
 				Expect(err).NotTo(HaveOccurred())

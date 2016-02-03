@@ -3,9 +3,11 @@ package acceptance_test
 import (
 	"encoding/json"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
@@ -66,9 +68,13 @@ var _ = Describe("DEL", func() {
 
 		server = ghttp.NewServer()
 		serverURL = server.URL()
-		// replaced when daemon is tested in delete
-		server.AllowUnhandledRequests = true
-		server.UnhandledRequestStatusCode = 201
+		server.RouteToHandler("POST", "/containers", func(resp http.ResponseWriter, req *http.Request) {
+			resp.WriteHeader(http.StatusCreated)
+		})
+
+		server.RouteToHandler("DELETE", regexp.MustCompile("/containers/.*"), func(resp http.ResponseWriter, req *http.Request) {
+			resp.WriteHeader(http.StatusNoContent)
+		})
 	})
 
 	AfterEach(func() {
@@ -108,6 +114,18 @@ var _ = Describe("DEL", func() {
 			_, err = os.Open(addressPath)
 			Expect(err).To(HaveOccurred())
 			Expect(os.IsNotExist(err)).To(BeTrue())
+		})
+
+		It("removes the container info from the ducati daemon", func() {
+			var err error
+			var cmd *exec.Cmd
+			sandboxNS, cmd, err = buildCNICmd("DEL", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			Expect(err).NotTo(HaveOccurred())
+			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+
+			Expect(server.ReceivedRequests()).Should(HaveLen(2))
 		})
 
 		Context("when the last container leaves the network", func() {

@@ -216,13 +216,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}
 
-	c := client.New(daemonBaseURL)
+	daemonClient := client.New(daemonBaseURL)
 
 	container := models.Container{
 		ID: args.ContainerID,
 	}
 
-	err = c.SaveContainer(container)
+	err = daemonClient.SaveContainer(container)
 	if err != nil {
 		return fmt.Errorf("saving container data to store: %s", err)
 	}
@@ -231,9 +231,21 @@ func cmdAdd(args *skel.CmdArgs) error {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
+	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
+	if daemonBaseURL == "" {
+		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
+	}
+
 	n, err := loadConf(args.StdinData)
 	if err != nil {
 		return err
+	}
+
+	daemonClient := client.New(daemonBaseURL)
+
+	err = daemonClient.RemoveContainer(args.ContainerID)
+	if err != nil {
+		return fmt.Errorf("removing container data to store: %s", err)
 	}
 
 	err = ipam.ExecDel(n.IPAM.Type, args.StdinData)
