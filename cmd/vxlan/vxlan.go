@@ -114,12 +114,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	containerNS := namespace.NewNamespace(args.Netns)
 
-	sandboxNamespaceFile, err := sandboxNS.Open()
-	if err != nil {
-		return fmt.Errorf("opening sandbox namespace: %s", err)
-	}
-	defer sandboxNamespaceFile.Close()
-
 	executor := executor.Executor{
 		NetworkNamespacer: ns.LinuxNamespacer,
 		LinkFactory:       linkFactory,
@@ -132,31 +126,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	vxlanName := fmt.Sprintf("vxlan%d", vni)
-
-	var foundVxlanDevice bool
-	err = sandboxNS.Execute(func(ns *os.File) error {
-		if _, err := linkFactory.FindLink(vxlanName); err == nil {
-			foundVxlanDevice = true
-		}
-		return nil
-	})
+	vxlanName, err := executor.EnsureVxlanDeviceExists(vni, sandboxNS)
 	if err != nil {
-		return fmt.Errorf("failed attempting to find vxlan device in sandbox: %s", err)
-	}
-
-	// create vxlan device within host namespace
-	if foundVxlanDevice == false {
-		vxlan, err := linkFactory.CreateVxlan(vxlanName, vni)
-		if err != nil {
-			return fmt.Errorf("creating vxlan device on host namespace: %s", err)
-		}
-
-		// move vxlan device to sandbox namespace
-		err = nl.Netlink.LinkSetNsFd(vxlan, int(sandboxNamespaceFile.Fd()))
-		if err != nil {
-			return fmt.Errorf("moving vxland device into sandbox: %s", err)
-		}
+		return err
 	}
 
 	err = sandboxNS.Execute(func(ns *os.File) error {

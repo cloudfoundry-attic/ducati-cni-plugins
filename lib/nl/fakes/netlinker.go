@@ -28,7 +28,7 @@ type Netlinker struct {
 	LinkListStub        func() ([]netlink.Link, error)
 	linkListMutex       sync.RWMutex
 	linkListArgsForCall []struct{}
-	linkListReturns struct {
+	linkListReturns     struct {
 		result1 []netlink.Link
 		result2 error
 	}

@@ -11,19 +11,19 @@ type Handle struct {
 	CloseStub        func() error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct{}
-	closeReturns struct {
+	closeReturns     struct {
 		result1 error
 	}
 	IsOpenStub        func() bool
 	isOpenMutex       sync.RWMutex
 	isOpenArgsForCall []struct{}
-	isOpenReturns struct {
+	isOpenReturns     struct {
 		result1 bool
 	}
 	FdStub        func() uintptr
 	fdMutex       sync.RWMutex
 	fdArgsForCall []struct{}
-	fdReturns struct {
+	fdReturns     struct {
 		result1 uintptr
 	}
 }

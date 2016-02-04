@@ -21,6 +21,25 @@ type LinkFactory struct {
 		result2 netlink.Link
 		result3 error
 	}
+	FindLinkStub        func(name string) (netlink.Link, error)
+	findLinkMutex       sync.RWMutex
+	findLinkArgsForCall []struct {
+		name string
+	}
+	findLinkReturns struct {
+		result1 netlink.Link
+		result2 error
+	}
+	CreateVxlanStub        func(name string, vni int) (netlink.Link, error)
+	createVxlanMutex       sync.RWMutex
+	createVxlanArgsForCall []struct {
+		name string
+		vni  int
+	}
+	createVxlanReturns struct {
+		result1 netlink.Link
+		result2 error
+	}
 }
 
 func (fake *LinkFactory) CreateVethPair(containerID string, hostIfaceName string, mtu int) (sandboxLink netlink.Link, containerLink netlink.Link, err error) {
@@ -57,6 +76,73 @@ func (fake *LinkFactory) CreateVethPairReturns(result1 netlink.Link, result2 net
 		result2 netlink.Link
 		result3 error
 	}{result1, result2, result3}
+}
+
+func (fake *LinkFactory) FindLink(name string) (netlink.Link, error) {
+	fake.findLinkMutex.Lock()
+	fake.findLinkArgsForCall = append(fake.findLinkArgsForCall, struct {
+		name string
+	}{name})
+	fake.findLinkMutex.Unlock()
+	if fake.FindLinkStub != nil {
+		return fake.FindLinkStub(name)
+	} else {
+		return fake.findLinkReturns.result1, fake.findLinkReturns.result2
+	}
+}
+
+func (fake *LinkFactory) FindLinkCallCount() int {
+	fake.findLinkMutex.RLock()
+	defer fake.findLinkMutex.RUnlock()
+	return len(fake.findLinkArgsForCall)
+}
+
+func (fake *LinkFactory) FindLinkArgsForCall(i int) string {
+	fake.findLinkMutex.RLock()
+	defer fake.findLinkMutex.RUnlock()
+	return fake.findLinkArgsForCall[i].name
+}
+
+func (fake *LinkFactory) FindLinkReturns(result1 netlink.Link, result2 error) {
+	fake.FindLinkStub = nil
+	fake.findLinkReturns = struct {
+		result1 netlink.Link
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *LinkFactory) CreateVxlan(name string, vni int) (netlink.Link, error) {
+	fake.createVxlanMutex.Lock()
+	fake.createVxlanArgsForCall = append(fake.createVxlanArgsForCall, struct {
+		name string
+		vni  int
+	}{name, vni})
+	fake.createVxlanMutex.Unlock()
+	if fake.CreateVxlanStub != nil {
+		return fake.CreateVxlanStub(name, vni)
+	} else {
+		return fake.createVxlanReturns.result1, fake.createVxlanReturns.result2
+	}
+}
+
+func (fake *LinkFactory) CreateVxlanCallCount() int {
+	fake.createVxlanMutex.RLock()
+	defer fake.createVxlanMutex.RUnlock()
+	return len(fake.createVxlanArgsForCall)
+}
+
+func (fake *LinkFactory) CreateVxlanArgsForCall(i int) (string, int) {
+	fake.createVxlanMutex.RLock()
+	defer fake.createVxlanMutex.RUnlock()
+	return fake.createVxlanArgsForCall[i].name, fake.createVxlanArgsForCall[i].vni
+}
+
+func (fake *LinkFactory) CreateVxlanReturns(result1 netlink.Link, result2 error) {
+	fake.CreateVxlanStub = nil
+	fake.createVxlanReturns = struct {
+		result1 netlink.Link
+		result2 error
+	}{result1, result2}
 }
 
 var _ executor.LinkFactory = new(LinkFactory)

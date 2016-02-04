@@ -38,7 +38,7 @@ type Config struct {
 const vni = 1
 const DEFAULT_TIMEOUT = "3s"
 
-var _ = Describe("vxlan", func() {
+var _ = Describe("VXLAN ADD", func() {
 	var (
 		netConfig Config
 		session   *gexec.Session

@@ -3,11 +3,13 @@ package executor
 import (
 	"fmt"
 	"net"
+	"os"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
+	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns"
 	"github.com/vishvananda/netlink"
@@ -23,6 +25,8 @@ type Executor struct {
 //go:generate counterfeiter --fake-name LinkFactory . LinkFactory
 type LinkFactory interface {
 	CreateVethPair(containerID, hostIfaceName string, mtu int) (sandboxLink netlink.Link, containerLink netlink.Link, err error)
+	FindLink(name string) (netlink.Link, error)
+	CreateVxlan(name string, vni int) (netlink.Link, error)
 }
 
 //go:generate counterfeiter --fake-name AddressManager . AddressManager
@@ -31,6 +35,44 @@ type AddressManager interface {
 }
 
 const selfPath = "/proc/self/ns/net"
+
+func (e *Executor) EnsureVxlanDeviceExists(vni int, sandboxNS namespace.Namespace) (string, error) {
+	vxlanName := fmt.Sprintf("vxlan%d", vni)
+
+	var foundVxlanDevice bool
+	err := sandboxNS.Execute(func(ns *os.File) error {
+		if _, err := e.LinkFactory.FindLink(vxlanName); err == nil {
+			foundVxlanDevice = true
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed attempting to find vxlan device in sandbox: %s", err)
+	}
+
+	// create vxlan device within host namespace
+	if !foundVxlanDevice {
+
+		vxlan, err := e.LinkFactory.CreateVxlan(vxlanName, vni)
+		if err != nil {
+			return "", fmt.Errorf("creating vxlan device on host namespace: %s", err)
+		}
+
+		sandboxNamespaceFile, err := sandboxNS.Open()
+		if err != nil {
+			return "", fmt.Errorf("opening sandbox namespace: %s", err)
+		}
+		defer sandboxNamespaceFile.Close()
+
+		// move vxlan device to sandbox namespace
+		err = e.Netlinker.LinkSetNsFd(vxlan, int(sandboxNamespaceFile.Fd()))
+		if err != nil {
+			return "", fmt.Errorf("moving vxlan device into sandbox: %s", err)
+		}
+	}
+
+	return vxlanName, nil
+}
 
 func (e *Executor) SetupContainerNS(
 	sandboxNsPath string,
