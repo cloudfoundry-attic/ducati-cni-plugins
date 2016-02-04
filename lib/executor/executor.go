@@ -92,11 +92,6 @@ func (e *Executor) SetupSandboxNS(
 			return fmt.Errorf("upping sandbox veth end: %s", err)
 		}
 
-		vxlan, err = e.LinkFactory.FindLink(vxlanName)
-		if err != nil {
-			return fmt.Errorf("finding vxlan device within sandbox after upping: %s", err)
-		}
-
 		sandboxLink, err = e.Netlinker.LinkByName(sandboxLink.Attrs().Name)
 		if err != nil {
 			return fmt.Errorf("find sandbox veth end by name: %s", err)
