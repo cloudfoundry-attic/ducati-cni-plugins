@@ -27,6 +27,7 @@ type LinkFactory interface {
 	CreateVethPair(containerID, hostIfaceName string, mtu int) (sandboxLink netlink.Link, containerLink netlink.Link, err error)
 	FindLink(name string) (netlink.Link, error)
 	CreateVxlan(name string, vni int) (netlink.Link, error)
+	CreateBridge(name string, addr *net.IPNet) (*netlink.Bridge, error)
 }
 
 //go:generate counterfeiter --fake-name AddressManager . AddressManager
@@ -72,6 +73,66 @@ func (e *Executor) EnsureVxlanDeviceExists(vni int, sandboxNS namespace.Namespac
 	}
 
 	return vxlanName, nil
+}
+
+func (e *Executor) SetupSandboxNS(
+	vxlanName, bridgeName string,
+	sandboxNS namespace.Namespace,
+	sandboxLink netlink.Link,
+	ipamResult *types.Result) error {
+
+	return sandboxNS.Execute(func(ns *os.File) error {
+		vxlan, err := e.LinkFactory.FindLink(vxlanName)
+		if err != nil {
+			return fmt.Errorf("finding vxlan device within sandbox: %s", err)
+		}
+
+		err = nl.Netlink.LinkSetUp(vxlan)
+		if err != nil {
+			return fmt.Errorf("upping sandbox veth end: %s", err)
+		}
+
+		vxlan, err = e.LinkFactory.FindLink(vxlanName)
+		if err != nil {
+			return fmt.Errorf("finding vxlan device within sandbox after upping: %s", err)
+		}
+
+		sandboxLink, err = e.Netlinker.LinkByName(sandboxLink.Attrs().Name)
+		if err != nil {
+			return fmt.Errorf("find sandbox veth end by name: %s", err)
+		}
+
+		err = e.Netlinker.LinkSetUp(sandboxLink)
+		if err != nil {
+			return fmt.Errorf("upping sandbox veth end: %s", err)
+		}
+
+		var bridge *netlink.Bridge
+		link, err := e.LinkFactory.FindLink(bridgeName)
+		if err != nil {
+			bridge, err = e.LinkFactory.CreateBridge(bridgeName, &net.IPNet{
+				IP:   ipamResult.IP4.Gateway,
+				Mask: ipamResult.IP4.IP.Mask,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create bridge: %s", err)
+			}
+		} else {
+			bridge = link.(*netlink.Bridge)
+		}
+
+		err = e.Netlinker.LinkSetMaster(vxlan, bridge)
+		if err != nil {
+			return fmt.Errorf("slaving vxlan to bridge: %s", err)
+		}
+
+		err = e.Netlinker.LinkSetMaster(sandboxLink, bridge)
+		if err != nil {
+			return fmt.Errorf("slaving veth end to bridge: %s", err)
+		}
+
+		return nil
+	})
 }
 
 func (e *Executor) SetupContainerNS(

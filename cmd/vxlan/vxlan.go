@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"runtime"
 
@@ -126,64 +125,17 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
+	bridgeName := fmt.Sprintf("vxlanbr%d", vni)
 	vxlanName, err := executor.EnsureVxlanDeviceExists(vni, sandboxNS)
 	if err != nil {
 		return err
 	}
 
-	err = sandboxNS.Execute(func(ns *os.File) error {
-		vxlan, err := linkFactory.FindLink(vxlanName)
-		if err != nil {
-			return fmt.Errorf("finding vxlan device within sandbox: %s", err)
-		}
-
-		err = nl.Netlink.LinkSetUp(vxlan)
-		if err != nil {
-			return fmt.Errorf("upping sandbox veth end: %s", err)
-		}
-
-		vxlan, err = linkFactory.FindLink(vxlanName)
-		if err != nil {
-			return fmt.Errorf("finding vxlan device within sandbox after upping: %s", err)
-		}
-
-		sandboxLink, err = nl.Netlink.LinkByName(sandboxLink.Attrs().Name)
-		if err != nil {
-			return fmt.Errorf("find sandbox veth end by name: %s", err)
-		}
-
-		err = nl.Netlink.LinkSetUp(sandboxLink)
-		if err != nil {
-			return fmt.Errorf("upping sandbox veth end: %s", err)
-		}
-
-		var bridge *netlink.Bridge
-		bridgeName := fmt.Sprintf("vxlanbr%d", vni)
-		link, err := linkFactory.FindLink(bridgeName)
-		if err != nil {
-			bridge, err = linkFactory.CreateBridge(bridgeName, &net.IPNet{
-				IP:   ipamResult.IP4.Gateway,
-				Mask: ipamResult.IP4.IP.Mask,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create bridge: %s", err)
-			}
-		} else {
-			bridge = link.(*netlink.Bridge)
-		}
-
-		err = nl.Netlink.LinkSetMaster(vxlan, bridge)
-		if err != nil {
-			return fmt.Errorf("slaving vxlan to bridge: %s", err)
-		}
-
-		err = nl.Netlink.LinkSetMaster(sandboxLink, bridge)
-		if err != nil {
-			return fmt.Errorf("slaving veth end to bridge: %s", err)
-		}
-
-		return nil
-	})
+	err = executor.SetupSandboxNS(
+		vxlanName, bridgeName,
+		sandboxNS,
+		sandboxLink,
+		ipamResult)
 	if err != nil {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}

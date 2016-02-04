@@ -2,6 +2,7 @@
 package fakes
 
 import (
+	"net"
 	"sync"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
@@ -38,6 +39,16 @@ type LinkFactory struct {
 	}
 	createVxlanReturns struct {
 		result1 netlink.Link
+		result2 error
+	}
+	CreateBridgeStub        func(name string, addr *net.IPNet) (*netlink.Bridge, error)
+	createBridgeMutex       sync.RWMutex
+	createBridgeArgsForCall []struct {
+		name string
+		addr *net.IPNet
+	}
+	createBridgeReturns struct {
+		result1 *netlink.Bridge
 		result2 error
 	}
 }
@@ -141,6 +152,40 @@ func (fake *LinkFactory) CreateVxlanReturns(result1 netlink.Link, result2 error)
 	fake.CreateVxlanStub = nil
 	fake.createVxlanReturns = struct {
 		result1 netlink.Link
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *LinkFactory) CreateBridge(name string, addr *net.IPNet) (*netlink.Bridge, error) {
+	fake.createBridgeMutex.Lock()
+	fake.createBridgeArgsForCall = append(fake.createBridgeArgsForCall, struct {
+		name string
+		addr *net.IPNet
+	}{name, addr})
+	fake.createBridgeMutex.Unlock()
+	if fake.CreateBridgeStub != nil {
+		return fake.CreateBridgeStub(name, addr)
+	} else {
+		return fake.createBridgeReturns.result1, fake.createBridgeReturns.result2
+	}
+}
+
+func (fake *LinkFactory) CreateBridgeCallCount() int {
+	fake.createBridgeMutex.RLock()
+	defer fake.createBridgeMutex.RUnlock()
+	return len(fake.createBridgeArgsForCall)
+}
+
+func (fake *LinkFactory) CreateBridgeArgsForCall(i int) (string, *net.IPNet) {
+	fake.createBridgeMutex.RLock()
+	defer fake.createBridgeMutex.RUnlock()
+	return fake.createBridgeArgsForCall[i].name, fake.createBridgeArgsForCall[i].addr
+}
+
+func (fake *LinkFactory) CreateBridgeReturns(result1 *netlink.Bridge, result2 error) {
+	fake.CreateBridgeStub = nil
+	fake.createBridgeReturns = struct {
+		result1 *netlink.Bridge
 		result2 error
 	}{result1, result2}
 }
