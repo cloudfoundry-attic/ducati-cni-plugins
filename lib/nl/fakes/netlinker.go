@@ -76,6 +76,15 @@ type Netlinker struct {
 	linkSetMasterReturns struct {
 		result1 error
 	}
+	LinkByIndexStub        func(int) (netlink.Link, error)
+	linkByIndexMutex       sync.RWMutex
+	linkByIndexArgsForCall []struct {
+		arg1 int
+	}
+	linkByIndexReturns struct {
+		result1 netlink.Link
+		result2 error
+	}
 	RouteAddStub        func(*netlink.Route) error
 	routeAddMutex       sync.RWMutex
 	routeAddArgsForCall []struct {
@@ -83,6 +92,16 @@ type Netlinker struct {
 	}
 	routeAddReturns struct {
 		result1 error
+	}
+	RouteListStub        func(netlink.Link, int) ([]netlink.Route, error)
+	routeListMutex       sync.RWMutex
+	routeListArgsForCall []struct {
+		arg1 netlink.Link
+		arg2 int
+	}
+	routeListReturns struct {
+		result1 []netlink.Route
+		result2 error
 	}
 }
 
@@ -339,6 +358,39 @@ func (fake *Netlinker) LinkSetMasterReturns(result1 error) {
 	}{result1}
 }
 
+func (fake *Netlinker) LinkByIndex(arg1 int) (netlink.Link, error) {
+	fake.linkByIndexMutex.Lock()
+	fake.linkByIndexArgsForCall = append(fake.linkByIndexArgsForCall, struct {
+		arg1 int
+	}{arg1})
+	fake.linkByIndexMutex.Unlock()
+	if fake.LinkByIndexStub != nil {
+		return fake.LinkByIndexStub(arg1)
+	} else {
+		return fake.linkByIndexReturns.result1, fake.linkByIndexReturns.result2
+	}
+}
+
+func (fake *Netlinker) LinkByIndexCallCount() int {
+	fake.linkByIndexMutex.RLock()
+	defer fake.linkByIndexMutex.RUnlock()
+	return len(fake.linkByIndexArgsForCall)
+}
+
+func (fake *Netlinker) LinkByIndexArgsForCall(i int) int {
+	fake.linkByIndexMutex.RLock()
+	defer fake.linkByIndexMutex.RUnlock()
+	return fake.linkByIndexArgsForCall[i].arg1
+}
+
+func (fake *Netlinker) LinkByIndexReturns(result1 netlink.Link, result2 error) {
+	fake.LinkByIndexStub = nil
+	fake.linkByIndexReturns = struct {
+		result1 netlink.Link
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *Netlinker) RouteAdd(arg1 *netlink.Route) error {
 	fake.routeAddMutex.Lock()
 	fake.routeAddArgsForCall = append(fake.routeAddArgsForCall, struct {
@@ -369,6 +421,40 @@ func (fake *Netlinker) RouteAddReturns(result1 error) {
 	fake.routeAddReturns = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *Netlinker) RouteList(arg1 netlink.Link, arg2 int) ([]netlink.Route, error) {
+	fake.routeListMutex.Lock()
+	fake.routeListArgsForCall = append(fake.routeListArgsForCall, struct {
+		arg1 netlink.Link
+		arg2 int
+	}{arg1, arg2})
+	fake.routeListMutex.Unlock()
+	if fake.RouteListStub != nil {
+		return fake.RouteListStub(arg1, arg2)
+	} else {
+		return fake.routeListReturns.result1, fake.routeListReturns.result2
+	}
+}
+
+func (fake *Netlinker) RouteListCallCount() int {
+	fake.routeListMutex.RLock()
+	defer fake.routeListMutex.RUnlock()
+	return len(fake.routeListArgsForCall)
+}
+
+func (fake *Netlinker) RouteListArgsForCall(i int) (netlink.Link, int) {
+	fake.routeListMutex.RLock()
+	defer fake.routeListMutex.RUnlock()
+	return fake.routeListArgsForCall[i].arg1, fake.routeListArgsForCall[i].arg2
+}
+
+func (fake *Netlinker) RouteListReturns(result1 []netlink.Route, result2 error) {
+	fake.RouteListStub = nil
+	fake.routeListReturns = struct {
+		result1 []netlink.Route
+		result2 error
+	}{result1, result2}
 }
 
 var _ nl.Netlinker = new(Netlinker)

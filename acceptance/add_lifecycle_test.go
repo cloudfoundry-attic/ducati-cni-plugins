@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
+	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -50,6 +51,7 @@ var _ = Describe("VXLAN ADD", func() {
 		containerNS   namespace.Namespace
 		sandboxNS     namespace.Namespace
 		namespaceRepo namespace.Repository
+		reqBytes      []byte
 
 		sandboxRepoDir string
 	)
@@ -86,11 +88,13 @@ var _ = Describe("VXLAN ADD", func() {
 
 		server = ghttp.NewServer()
 		serverURL = server.URL()
-		server.AppendHandlers(ghttp.CombineHandlers(
-			ghttp.VerifyRequest("POST", "/containers"),
-			ghttp.VerifyJSON(fmt.Sprintf(`{"id":%q}`, containerID)),
-			ghttp.RespondWith(http.StatusCreated, nil),
-		))
+
+		server.RouteToHandler("POST", "/containers", func(resp http.ResponseWriter, req *http.Request) {
+			var err error
+			reqBytes, err = ioutil.ReadAll(req.Body)
+			Expect(err).NotTo(HaveOccurred())
+			resp.WriteHeader(http.StatusCreated)
+		})
 	})
 
 	AfterEach(func() {
@@ -219,6 +223,21 @@ var _ = Describe("VXLAN ADD", func() {
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 			Expect(server.ReceivedRequests()).Should(HaveLen(1))
+
+			var output *models.Container
+			err = json.Unmarshal(reqBytes, &output)
+			Expect(err).NotTo(HaveOccurred())
+
+			hostIP, _, err := net.ParseCIDR(output.HostIP)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, ipNet, err := net.ParseCIDR(netConfig.IPAM.Subnet)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(output.ID).To(Equal(containerID))
+			Expect(output.MAC).To(MatchRegexp("[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}"))
+			Expect(ipNet.Contains(net.ParseIP(output.IP))).To(BeTrue())
+			Expect(hostIP).NotTo(BeNil())
 		})
 
 		Context("when there are routes", func() {
@@ -330,7 +349,8 @@ var _ = Describe("VXLAN ADD", func() {
 
 		Context("when the call to the daemon fails", func() {
 			It("returns an error", func() {
-				server.SetHandler(0, ghttp.RespondWith(http.StatusInternalServerError, nil))
+				server.Reset()
+				server.AppendHandlers(ghttp.RespondWith(http.StatusInternalServerError, nil))
 
 				var err error
 				var cmd *exec.Cmd

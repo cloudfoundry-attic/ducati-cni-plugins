@@ -91,6 +91,17 @@ var _ = Describe("SetupContainerNS", func() {
 		}}
 		linkFactory.CreateVethPairReturns(returnedSandboxLink, returnedContainerLink, nil)
 
+		hwAddr, err := net.ParseMAC("ff:ff:ff:ff:ff:ff")
+		Expect(err).NotTo(HaveOccurred())
+
+		linkFactory.FindLinkReturns(TestLink{
+			Attributes: netlink.LinkAttrs{
+				Index:        1555,
+				Name:         "container-link",
+				HardwareAddr: hwAddr,
+			},
+		}, nil)
+
 		result = &types.Result{
 			IP4: &types.IPConfig{
 				IP: net.IPNet{
@@ -112,9 +123,8 @@ var _ = Describe("SetupContainerNS", func() {
 	})
 
 	It("should construct the network inside the container namespace", func() {
-		sandboxLink, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+		sandboxLink, containerMAC, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(sandboxLink.Attrs().Name).To(Equal("sandbox-link"))
 
 		By("asking for the host namespace handle")
 		Expect(networkNamespacer.GetFromPathCallCount()).To(Equal(3))
@@ -153,6 +163,10 @@ var _ = Describe("SetupContainerNS", func() {
 		Expect(netlinker.LinkSetUpCallCount()).To(Equal(1))
 		Expect(netlinker.LinkSetUpArgsForCall(0)).To(Equal(returnedContainerLink))
 
+		By("refreshing the containerlink to get its hardware address")
+		Expect(linkFactory.FindLinkCallCount()).To(Equal(1))
+		Expect(linkFactory.FindLinkArgsForCall(0)).To(Equal("container-link"))
+
 		By("adding a route")
 		Expect(netlinker.RouteAddCallCount()).To(Equal(1))
 		route := netlinker.RouteAddArgsForCall(0)
@@ -168,6 +182,10 @@ var _ = Describe("SetupContainerNS", func() {
 		Expect(hostHandle.CloseCallCount()).To(Equal(1))
 		Expect(sandboxNsHandle.CloseCallCount()).To(Equal(1))
 		Expect(containerNsHandle.CloseCallCount()).To(Equal(1))
+
+		By("verifying return link and containermac")
+		Expect(sandboxLink.Attrs().Name).To(Equal("sandbox-link"))
+		Expect(containerMAC).To(Equal("ff:ff:ff:ff:ff:ff"))
 	})
 
 	Context("when no routes are specified", func() {
@@ -192,7 +210,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("adds all routes", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(netlinker.RouteAddCallCount()).To(Equal(2))
@@ -217,7 +235,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("uses the default gateway for the route", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(netlinker.RouteAddCallCount()).To(Equal(1))
@@ -242,7 +260,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`could not open container namespace "/var/some/container/namespace": failed to open`))
 		})
@@ -259,7 +277,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`set container namespace "/var/some/container/namespace" failed: original set error`))
 		})
@@ -277,7 +295,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`could not create veth pair: nobody wants a veth`))
 		})
@@ -298,7 +316,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`failed to get sandbox namespace handle: wow, a failure`))
 		})
@@ -310,7 +328,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`failed to move sandbox link into sandbox: boom`))
 		})
@@ -328,7 +346,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`setting container address failed: no address for you`))
 		})
@@ -340,9 +358,21 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`failed to up container link: explosivo`))
+		})
+	})
+
+	Context("when refreshing the container link fails", func() {
+		BeforeEach(func() {
+			linkFactory.FindLinkReturns(nil, errors.New("some error"))
+		})
+
+		It("wraps the error with a helpful message", func() {
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+
+			Expect(err).To(MatchError(`failed to refresh container link: some error`))
 		})
 	})
 
@@ -365,7 +395,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("proceeds to the next route without failing", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(netlinker.RouteAddCallCount()).To(Equal(2))
@@ -378,7 +408,7 @@ var _ = Describe("SetupContainerNS", func() {
 		})
 
 		It("wraps the error with a helpful message", func() {
-			_, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
 
 			Expect(err).To(MatchError(`adding route to 192.168.1.5/24 via 192.168.1.1 failed: invalid destination`))
 		})

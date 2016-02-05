@@ -136,7 +136,7 @@ func (e *Executor) SetupContainerNS(
 	containerID string,
 	interfaceName string,
 	ipamResult *types.Result,
-) (netlink.Link, error) {
+) (netlink.Link, string, error) {
 	hostNsHandle, err := e.NetworkNamespacer.GetFromPath(selfPath)
 	if err != nil {
 		panic(err)
@@ -145,39 +145,44 @@ func (e *Executor) SetupContainerNS(
 
 	containerNsHandle, err := e.NetworkNamespacer.GetFromPath(containerNsPath)
 	if err != nil {
-		return nil, fmt.Errorf("could not open container namespace %q: %s", containerNsPath, err)
+		return nil, "", fmt.Errorf("could not open container namespace %q: %s", containerNsPath, err)
 	}
 	defer containerNsHandle.Close()
 
 	err = e.NetworkNamespacer.Set(containerNsHandle)
 	if err != nil {
-		return nil, fmt.Errorf("set container namespace %q failed: %s", containerNsPath, err)
+		return nil, "", fmt.Errorf("set container namespace %q failed: %s", containerNsPath, err)
 	}
 
 	sandboxLink, containerLink, err := e.LinkFactory.CreateVethPair(containerID, interfaceName, links.VxlanVethMTU)
 	if err != nil {
-		return nil, fmt.Errorf("could not create veth pair: %s", err)
+		return nil, "", fmt.Errorf("could not create veth pair: %s", err)
 	}
 
 	sandboxNsHandle, err := e.NetworkNamespacer.GetFromPath(sandboxNsPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sandbox namespace handle: %s", err)
+		return nil, "", fmt.Errorf("failed to get sandbox namespace handle: %s", err)
 	}
 	defer sandboxNsHandle.Close()
 
 	err = e.Netlinker.LinkSetNsFd(sandboxLink, int(sandboxNsHandle.Fd()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to move sandbox link into sandbox: %s", err)
+		return nil, "", fmt.Errorf("failed to move sandbox link into sandbox: %s", err)
 	}
 
 	err = e.AddressManager.AddAddress(containerLink, &ipamResult.IP4.IP)
 	if err != nil {
-		return nil, fmt.Errorf("setting container address failed: %s", err)
+		return nil, "", fmt.Errorf("setting container address failed: %s", err)
 	}
 
 	err = e.Netlinker.LinkSetUp(containerLink)
 	if err != nil {
-		return nil, fmt.Errorf("failed to up container link: %s", err)
+		return nil, "", fmt.Errorf("failed to up container link: %s", err)
+	}
+
+	containerLink, err = e.LinkFactory.FindLink(containerLink.Attrs().Name)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to refresh container link: %s", err)
 	}
 
 	for _, r := range ipamResult.IP4.Routes {
@@ -195,11 +200,11 @@ func (e *Executor) SetupContainerNS(
 
 		err = e.Netlinker.RouteAdd(nlRoute)
 		if err != nil && err != unix.EEXIST {
-			return nil, fmt.Errorf("adding route to %s via %s failed: %s", nlRoute.Dst, nlRoute.Gw, err)
+			return nil, "", fmt.Errorf("adding route to %s via %s failed: %s", nlRoute.Dst, nlRoute.Gw, err)
 		}
 	}
 
-	return sandboxLink, nil
+	return sandboxLink, containerLink.Attrs().HardwareAddr.String(), nil
 }
 
 func (e *Executor) restoreAndCloseNamespace(handle ns.Handle) {

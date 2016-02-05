@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 
@@ -78,6 +79,40 @@ func getSandboxNS(name string) (namespace.Namespace, error) {
 	return sandboxNS, nil
 }
 
+func getHostIP() (string, error) {
+	routes, err := nl.Netlink.RouteList(nil, nl.FAMILY_V4)
+	if err != nil {
+		return "", fmt.Errorf("route list failed: %s", err)
+	}
+
+	var ifaceName string
+	for _, r := range routes {
+		link, err := nl.Netlink.LinkByIndex(r.LinkIndex)
+		if err != nil {
+			return "", fmt.Errorf("link by index failed: %s", err)
+		}
+		if r.Dst == nil && r.Src == nil {
+			ifaceName = link.Attrs().Name
+		}
+	}
+
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return "", fmt.Errorf("error getting interface: %s", err)
+	}
+
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return "", fmt.Errorf("error getting addrs: %s", err)
+	}
+
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("no addrs found for interface: %s", ifaceName)
+	}
+
+	return addrs[0].String(), nil
+}
+
 func cmdAdd(args *skel.CmdArgs) error {
 	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
 	if daemonBaseURL == "" {
@@ -120,7 +155,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		AddressManager:    addressManager,
 	}
 
-	sandboxLink, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
+	sandboxLink, containerMAC, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
 	if err != nil {
 		return err
 	}
@@ -143,7 +178,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 	daemonClient := client.New(daemonBaseURL)
 
 	container := models.Container{
-		ID: args.ContainerID,
+		ID:  args.ContainerID,
+		MAC: containerMAC,
+		IP:  ipamResult.IP4.IP.IP.String(),
+	}
+
+	container.HostIP, err = getHostIP()
+	if err != nil {
+		return fmt.Errorf("getting host IP:", err)
 	}
 
 	err = daemonClient.SaveContainer(container)

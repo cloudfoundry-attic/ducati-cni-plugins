@@ -18,6 +18,10 @@ func (*nl) LinkByName(name string) (netlink.Link, error) {
 	return netlink.LinkByName(name)
 }
 
+func (*nl) LinkByIndex(index int) (netlink.Link, error) {
+	return netlink.LinkByIndex(index)
+}
+
 func (*nl) LinkSetNsFd(link netlink.Link, fd int) error {
 	return netlink.LinkSetNsFd(link, fd)
 }
@@ -40,4 +44,8 @@ func (*nl) LinkDel(link netlink.Link) error {
 
 func (*nl) LinkList() ([]netlink.Link, error) {
 	return netlink.LinkList()
+}
+
+func (*nl) RouteList(link netlink.Link, family int) ([]netlink.Route, error) {
+	return netlink.RouteList(link, family)
 }
