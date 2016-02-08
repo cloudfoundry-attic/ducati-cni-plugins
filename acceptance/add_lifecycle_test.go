@@ -359,7 +359,7 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-				Expect(session.Out.Contents()).To(ContainSubstring("saving container data to store: expected to receive 201"))
+				Expect(session.Out.Contents()).To(ContainSubstring("saving container data to store"))
 			})
 		})
 
