@@ -94,8 +94,12 @@ func removeNetworkNamespace(name string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func buildCNICmd(operation string, netConfig Config, containerNS namespace.Namespace,
-	containerID, sandboxRepoDir, serverURL string) (namespace.Namespace, *exec.Cmd, error) {
+func buildCNICmd(
+	operation string,
+	netConfig Config,
+	containerNS namespace.Namespace,
+	containerID, sandboxRepoDir, serverURL string,
+) (namespace.Namespace, *exec.Cmd, error) {
 
 	input, err := json.Marshal(netConfig)
 	if err != nil {

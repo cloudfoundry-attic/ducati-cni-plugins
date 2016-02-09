@@ -29,11 +29,9 @@ type IPAM struct {
 }
 
 type Config struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Network     string `json:"network"`
-	HostNetwork string `json:"host_network"`
-	IPAM        IPAM   `json:"ipam,omitempty"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	NetworkID string `json:"network_id"`
 }
 
 const vni = 1
@@ -52,6 +50,8 @@ var _ = Describe("VXLAN ADD", func() {
 		sandboxNS     namespace.Namespace
 		namespaceRepo namespace.Repository
 		reqBytes      []byte
+
+		ipamResult types.Result
 
 		sandboxRepoDir string
 	)
@@ -73,22 +73,39 @@ var _ = Describe("VXLAN ADD", func() {
 		containerID = "guid-1"
 
 		netConfig = Config{
-			Name:        "test-network",
-			Type:        "vxlan",
-			Network:     "192.168.1.0/24",
-			HostNetwork: "10.99.0.0/24",
-			IPAM: IPAM{
-				Type:   "host-local",
-				Subnet: "192.168.1.0/24",
-				Routes: []map[string]string{
-					{"dst": "0.0.0.0/0"},
-				},
-			},
+			Name:      "test-network",
+			Type:      "vxlan",
+			NetworkID: "some-network-id",
 		}
 
 		server = ghttp.NewServer()
 		serverURL = server.URL()
 
+		ipamResult = types.Result{
+			IP4: &types.IPConfig{
+				IP: net.IPNet{
+					IP:   net.ParseIP("192.168.1.2"),
+					Mask: net.CIDRMask(24, 32),
+				},
+				Gateway: net.ParseIP("192.168.1.1"),
+				Routes: []types.Route{{
+					Dst: net.IPNet{
+						IP:   net.ParseIP("192.168.0.0"),
+						Mask: net.CIDRMask(16, 32),
+					},
+					GW: net.ParseIP("192.168.1.1"),
+				}},
+			},
+		}
+
+		ipamStatusCode := http.StatusCreated
+		ipamPostHandler := ghttp.CombineHandlers(
+			ghttp.VerifyRequest("POST", "/ipam/some-network-id"),
+			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
+			ghttp.RespondWithJSONEncodedPtr(&ipamStatusCode, &ipamResult),
+		)
+
+		server.RouteToHandler("POST", "/ipam/some-network-id", ipamPostHandler)
 		server.RouteToHandler("POST", "/containers", func(resp http.ResponseWriter, req *http.Request) {
 			var err error
 			reqBytes, err = ioutil.ReadAll(req.Body)
@@ -222,7 +239,7 @@ var _ = Describe("VXLAN ADD", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-			Expect(server.ReceivedRequests()).Should(HaveLen(1))
+			Expect(server.ReceivedRequests()).To(HaveLen(2))
 
 			var output *models.Container
 			err = json.Unmarshal(reqBytes, &output)
@@ -231,18 +248,17 @@ var _ = Describe("VXLAN ADD", func() {
 			hostIP, _, err := net.ParseCIDR(output.HostIP)
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ipNet, err := net.ParseCIDR(netConfig.IPAM.Subnet)
-			Expect(err).NotTo(HaveOccurred())
-
 			Expect(output.ID).To(Equal(containerID))
 			Expect(output.MAC).To(MatchRegexp("[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}:[[:xdigit:]]{2}"))
-			Expect(ipNet.Contains(net.ParseIP(output.IP))).To(BeTrue())
 			Expect(hostIP).NotTo(BeNil())
 		})
 
 		Context("when there are routes", func() {
 			BeforeEach(func() {
-				netConfig.IPAM.Routes = append(netConfig.IPAM.Routes, map[string]string{"dst": "10.10.10.0/24"})
+				_, destination, err := net.ParseCIDR("10.10.10.0/24")
+				Expect(err).NotTo(HaveOccurred())
+
+				ipamResult.IP4.Routes = append(ipamResult.IP4.Routes, types.Route{Dst: *destination})
 			})
 
 			It("should contain the routes", func() {
@@ -275,8 +291,10 @@ var _ = Describe("VXLAN ADD", func() {
 						})
 					}
 
+					_, vxlanNet, err := net.ParseCIDR("192.168.0.0/16")
 					Expect(sanitizedRoutes).To(ContainElement(netlink.Route{
-						Gw: result.IP4.Gateway.To4(),
+						Dst: vxlanNet,
+						Gw:  result.IP4.Gateway.To4(),
 					}))
 
 					_, linkLocal, err := net.ParseCIDR("192.168.1.0/24")
@@ -312,7 +330,7 @@ var _ = Describe("VXLAN ADD", func() {
 
 			Expect(result.IP4.Gateway.String()).To(Equal("192.168.1.1"))
 			Expect(result.IP4.Routes).To(HaveLen(1))
-			Expect(result.IP4.Routes[0].Dst.String()).To(Equal("0.0.0.0/0"))
+			Expect(result.IP4.Routes[0].Dst.String()).To(Equal("192.168.0.0/16"))
 
 			err = containerNS.Execute(func(_ *os.File) error {
 				l, err := netlink.LinkByName("vx-eth0")
@@ -328,30 +346,12 @@ var _ = Describe("VXLAN ADD", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("uses the IPAM plugin to allocate an IP", func() {
-			var err error
-			var cmd *exec.Cmd
-			sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
-			Expect(err).NotTo(HaveOccurred())
-			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-			Expect(err).NotTo(HaveOccurred())
-			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
+		Context("when the call to allocate an IP fails", func() {
+			BeforeEach(func() {
+				server.RouteToHandler("POST", "/ipam/some-network-id", ghttp.RespondWith(http.StatusInternalServerError, nil))
+			})
 
-			var result types.Result
-			err = json.Unmarshal(session.Out.Contents(), &result)
-			Expect(err).NotTo(HaveOccurred())
-
-			addressPath := filepath.Join("/var/lib/cni/networks", "test-network", result.IP4.IP.IP.String())
-			addressFile, err := os.Open(addressPath)
-			Expect(err).NotTo(HaveOccurred())
-			addressFile.Close()
-		})
-
-		Context("when the call to the daemon fails", func() {
 			It("returns an error", func() {
-				server.Reset()
-				server.AppendHandlers(ghttp.RespondWith(http.StatusInternalServerError, nil))
-
 				var err error
 				var cmd *exec.Cmd
 				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
@@ -359,6 +359,27 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
+				Expect(server.ReceivedRequests()).To(HaveLen(1))
+				Expect(session.Out.Contents()).To(ContainSubstring("unexpected status code on AllocateIP"))
+			})
+		})
+
+		Context("when the call to the daemon to register the container fails", func() {
+			BeforeEach(func() {
+				server.RouteToHandler("POST", "/containers", ghttp.RespondWith(http.StatusInternalServerError, nil))
+			})
+
+			It("returns an error", func() {
+				var err error
+				var cmd *exec.Cmd
+				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				Expect(err).NotTo(HaveOccurred())
+				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
+				Expect(server.ReceivedRequests()).To(HaveLen(2))
 				Expect(session.Out.Contents()).To(ContainSubstring("saving container data to store"))
 			})
 		})
@@ -376,6 +397,7 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
 				Expect(session.Out.Contents()).To(ContainSubstring("CNI_CONTAINERID is required"))
 			})
 		})
@@ -393,6 +415,7 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
 				Expect(session.Out.Contents()).To(ContainSubstring("DUCATI_OS_SANDBOX_REPO is required"))
 			})
 		})
@@ -414,25 +437,8 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
 				Expect(session.Out.Contents()).To(ContainSubstring("failed to create sandbox repository"))
-			})
-		})
-
-		Context("when the IPAM plugin returns an error", func() {
-			BeforeEach(func() {
-				netConfig.IPAM = IPAM{}
-				netConfig.IPAM.Type = "not-a-plugin"
-			})
-
-			It("exits with an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-				Expect(session.Out.Contents()).To(MatchRegexp("could not find.*plugin"))
 			})
 		})
 
@@ -451,6 +457,7 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
 				Expect(session.Out.Contents()).To(ContainSubstring("non-existent-ns"))
 			})
 		})
@@ -475,16 +482,17 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
+
 				Expect(session.Out.Contents()).To(ContainSubstring("could not create veth pair"))
 			})
 		})
 
 		Context("When the Bridge cannot be created inside of the sanbox", func() {
 			BeforeEach(func() {
-				netConfig.IPAM.Type = "fake_plugins"
+				ipamResult.IP4.Gateway = net.ParseIP("192.168.1.2")
 			})
 
-			It("returns with an error", func() {
+			PIt("returns with an error", func() {
 				var err error
 				var cmd *exec.Cmd
 				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
@@ -492,7 +500,8 @@ var _ = Describe("VXLAN ADD", func() {
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-				Expect(session.Out.Contents()).To(ContainSubstring("failed to create bridge"))
+
+				Expect(session.Out.Contents()).To(ContainSubstring("configuring sandbox namespace"))
 			})
 		})
 	})

@@ -8,7 +8,6 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/appc/cni/pkg/ipam"
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
@@ -26,8 +25,7 @@ const vni = 1
 
 type NetConf struct {
 	types.NetConf
-	Network     string `json:"network"` // IPNet
-	HostNetwork string `json:"host_network"`
+	NetworkID string `json:"network_id"`
 }
 
 func init() {
@@ -41,8 +39,8 @@ func loadConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf("failed to load netconf: %v", err)
 	}
 
-	if n.Network == "" {
-		return nil, fmt.Errorf(`"network" field is required. It specifies the overlay subnet`)
+	if n.NetworkID == "" {
+		return nil, fmt.Errorf(`"network_id" field is required. It identifies the network.`)
 	}
 
 	return n, nil
@@ -133,18 +131,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("getting vxlan sandbox: %s", err)
 	}
 
-	// run the IPAM plugin and get back the config to apply
-	ipamResult, err := ipam.ExecAdd(netConf.IPAM.Type, args.StdinData)
-	if err != nil {
-		return fmt.Errorf("executing IPAM plugin: %s", err)
-	}
-
-	if ipamResult.IP4 == nil {
-		return errors.New("IPAM plugin returned with missing IPv4 config")
-	}
-
 	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	addressManager := &ip.AddressManager{Netlinker: nl.Netlink}
+	daemonClient := client.New(daemonBaseURL)
 
 	containerNS := namespace.NewNamespace(args.Netns)
 
@@ -153,6 +142,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 		LinkFactory:       linkFactory,
 		Netlinker:         nl.Netlink,
 		AddressManager:    addressManager,
+	}
+
+	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID)
+	if err != nil {
+		return err
 	}
 
 	sandboxLink, containerMAC, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
@@ -166,16 +160,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	err = executor.SetupSandboxNS(
-		vxlanName, bridgeName,
-		sandboxNS,
-		sandboxLink,
-		ipamResult)
+	err = executor.SetupSandboxNS(vxlanName, bridgeName, sandboxNS, sandboxLink, ipamResult)
 	if err != nil {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}
-
-	daemonClient := client.New(daemonBaseURL)
 
 	container := models.Container{
 		ID:  args.ContainerID,
@@ -202,22 +190,22 @@ func cmdDel(args *skel.CmdArgs) error {
 		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
 	}
 
-	n, err := loadConf(args.StdinData)
-	if err != nil {
-		return err
-	}
+	// n, err := loadConf(args.StdinData)
+	// if err != nil {
+	// 	return err
+	// }
 
 	daemonClient := client.New(daemonBaseURL)
 
-	err = daemonClient.RemoveContainer(args.ContainerID)
+	err := daemonClient.RemoveContainer(args.ContainerID)
 	if err != nil {
 		return fmt.Errorf("removing container data to store: %s", err)
 	}
 
-	err = ipam.ExecDel(n.IPAM.Type, args.StdinData)
-	if err != nil {
-		return err
-	}
+	// err = ipam.ExecDel(n.IPAM.Type, args.StdinData)
+	// if err != nil {
+	// 	return err
+	// }
 
 	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	containerNS := namespace.NewNamespace(args.Netns)

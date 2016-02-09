@@ -48,7 +48,7 @@ var _ = Describe("SetupContainerNS", func() {
 
 		returnedSandboxLink   netlink.Link
 		returnedContainerLink netlink.Link
-		result                *types.Result
+		result                types.Result
 	)
 
 	BeforeEach(func() {
@@ -102,7 +102,7 @@ var _ = Describe("SetupContainerNS", func() {
 			},
 		}, nil)
 
-		result = &types.Result{
+		result = types.Result{
 			IP4: &types.IPConfig{
 				IP: net.IPNet{
 					IP:   net.ParseIP("192.168.100.1"),
@@ -245,6 +245,18 @@ var _ = Describe("SetupContainerNS", func() {
 			Expect(route.Scope).To(Equal(netlink.SCOPE_UNIVERSE))
 			Expect(route.Dst).To(Equal(&result.IP4.Routes[0].Dst))
 			Expect(route.Gw).To(Equal(result.IP4.Gateway))
+		})
+	})
+
+	Context("when getting the host namespace fails", func() {
+		BeforeEach(func() {
+			networkNamespacer.GetFromPathReturns(nil, errors.New("can't find my own namespace"))
+		})
+
+		It("wraps the error with a helpful message", func() {
+			_, _, err := ex.SetupContainerNS("/var/some/sandbox/namespace", "/var/some/container/namespace", "some-container-id", "some-eth0", result)
+
+			Expect(err).To(MatchError(`failed to get host namespace handle: can't find my own namespace`))
 		})
 	})
 

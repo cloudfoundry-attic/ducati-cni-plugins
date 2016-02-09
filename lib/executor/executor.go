@@ -79,8 +79,8 @@ func (e *Executor) SetupSandboxNS(
 	vxlanName, bridgeName string,
 	sandboxNS namespace.Namespace,
 	sandboxLink netlink.Link,
-	ipamResult *types.Result) error {
-
+	ipamResult types.Result,
+) error {
 	return sandboxNS.Execute(func(ns *os.File) error {
 		vxlan, err := e.LinkFactory.FindLink(vxlanName)
 		if err != nil {
@@ -135,11 +135,11 @@ func (e *Executor) SetupContainerNS(
 	containerNsPath string,
 	containerID string,
 	interfaceName string,
-	ipamResult *types.Result,
+	ipamResult types.Result,
 ) (netlink.Link, string, error) {
 	hostNsHandle, err := e.NetworkNamespacer.GetFromPath(selfPath)
 	if err != nil {
-		panic(err)
+		return nil, "", fmt.Errorf("failed to get host namespace handle: %s", err)
 	}
 	defer e.restoreAndCloseNamespace(hostNsHandle)
 
