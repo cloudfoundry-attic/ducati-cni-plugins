@@ -100,12 +100,12 @@ var _ = Describe("VXLAN ADD", func() {
 
 		ipamStatusCode := http.StatusCreated
 		ipamPostHandler := ghttp.CombineHandlers(
-			ghttp.VerifyRequest("POST", "/ipam/some-network-id"),
+			ghttp.VerifyRequest("POST", "/ipam/some-network-id/guid-1"),
 			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
 			ghttp.RespondWithJSONEncodedPtr(&ipamStatusCode, &ipamResult),
 		)
 
-		server.RouteToHandler("POST", "/ipam/some-network-id", ipamPostHandler)
+		server.RouteToHandler("POST", "/ipam/some-network-id/guid-1", ipamPostHandler)
 		server.RouteToHandler("POST", "/containers", func(resp http.ResponseWriter, req *http.Request) {
 			var err error
 			reqBytes, err = ioutil.ReadAll(req.Body)
@@ -348,7 +348,7 @@ var _ = Describe("VXLAN ADD", func() {
 
 		Context("when the call to allocate an IP fails", func() {
 			BeforeEach(func() {
-				server.RouteToHandler("POST", "/ipam/some-network-id", ghttp.RespondWith(http.StatusInternalServerError, nil))
+				server.RouteToHandler("POST", "/ipam/some-network-id/guid-1", ghttp.RespondWith(http.StatusInternalServerError, nil))
 			})
 
 			It("returns an error", func() {

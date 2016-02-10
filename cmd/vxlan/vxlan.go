@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"runtime"
 
@@ -133,7 +134,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	addressManager := &ip.AddressManager{Netlinker: nl.Netlink}
-	daemonClient := client.New(daemonBaseURL)
+	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
 
 	containerNS := namespace.NewNamespace(args.Netns)
 
@@ -144,7 +145,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		AddressManager:    addressManager,
 	}
 
-	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID)
+	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
 	if err != nil {
 		return err
 	}
@@ -195,7 +196,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	// 	return err
 	// }
 
-	daemonClient := client.New(daemonBaseURL)
+	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
 
 	err := daemonClient.RemoveContainer(args.ContainerID)
 	if err != nil {

@@ -62,13 +62,35 @@ var _ = Describe("VXLAN DEL", func() {
 		server = ghttp.NewServer()
 		serverURL = server.URL()
 
-		server.RouteToHandler("POST", "/ipam/some-network-id", ghttp.CombineHandlers(
+		server.RouteToHandler("POST", "/ipam/some-network-id/guid-1", ghttp.CombineHandlers(
 			ghttp.RespondWithJSONEncoded(
 				http.StatusCreated,
 				types.Result{
 					IP4: &types.IPConfig{
 						IP: net.IPNet{
 							IP:   net.ParseIP("192.168.1.2"),
+							Mask: net.CIDRMask(24, 32),
+						},
+						Gateway: net.ParseIP("192.168.1.1"),
+						Routes: []types.Route{{
+							Dst: net.IPNet{
+								IP:   net.ParseIP("192.168.0.0"),
+								Mask: net.CIDRMask(16, 32),
+							},
+							GW: net.ParseIP("192.168.1.1"),
+						}},
+					},
+				},
+			),
+		))
+
+		server.RouteToHandler("POST", "/ipam/some-network-id/guid-2", ghttp.CombineHandlers(
+			ghttp.RespondWithJSONEncoded(
+				http.StatusCreated,
+				types.Result{
+					IP4: &types.IPConfig{
+						IP: net.IPNet{
+							IP:   net.ParseIP("192.168.1.3"),
 							Mask: net.CIDRMask(24, 32),
 						},
 						Gateway: net.ParseIP("192.168.1.1"),
