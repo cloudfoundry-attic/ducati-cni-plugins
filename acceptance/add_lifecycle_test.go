@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

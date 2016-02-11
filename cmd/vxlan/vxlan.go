@@ -11,13 +11,13 @@ import (
 
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/executor"
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ip"
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/links"
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/namespace"
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/nl" //only only on linux - ignore error
-	"github.com/cloudfoundry-incubator/ducati-cni-plugins/lib/ns" //only only on linux - ignore error
 	"github.com/cloudfoundry-incubator/ducati-daemon/client"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/executor"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/ip"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/links"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/nl"
+	"github.com/cloudfoundry-incubator/ducati-daemon/lib/ns"
 	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	"github.com/vishvananda/netlink"
 )
