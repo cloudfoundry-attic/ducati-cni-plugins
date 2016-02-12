@@ -191,22 +191,12 @@ func cmdDel(args *skel.CmdArgs) error {
 		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
 	}
 
-	// n, err := loadConf(args.StdinData)
-	// if err != nil {
-	// 	return err
-	// }
-
 	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
 
 	err := daemonClient.RemoveContainer(args.ContainerID)
 	if err != nil {
 		return fmt.Errorf("removing container data to store: %s", err)
 	}
-
-	// err = ipam.ExecDel(n.IPAM.Type, args.StdinData)
-	// if err != nil {
-	// 	return err
-	// }
 
 	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	containerNS := namespace.NewNamespace(args.Netns)
