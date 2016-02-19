@@ -12,12 +12,12 @@ import (
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-daemon/client"
+	exec "github.com/cloudfoundry-incubator/ducati-daemon/executor"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/executor"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/ip"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/nl"
-	"github.com/cloudfoundry-incubator/ducati-daemon/lib/ns"
 	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	"github.com/vishvananda/netlink"
 )
@@ -132,17 +132,18 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("getting vxlan sandbox: %s", err)
 	}
 
-	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	addressManager := &ip.AddressManager{Netlinker: nl.Netlink}
+	routeManager := &ip.RouteManager{Netlinker: nl.Netlink}
+	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
 
 	containerNS := namespace.NewNamespace(args.Netns)
 
+	commandExecutor := exec.New(addressManager, routeManager, linkFactory)
+
 	executor := executor.Executor{
-		NetworkNamespacer: ns.LinuxNamespacer,
-		LinkFactory:       linkFactory,
-		Netlinker:         nl.Netlink,
-		AddressManager:    addressManager,
+		Executor:    commandExecutor,
+		LinkFactory: linkFactory,
 	}
 
 	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
@@ -150,7 +151,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	sandboxLink, containerMAC, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
+	sandboxLinkName, containerMAC, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
 	if err != nil {
 		return err
 	}
@@ -161,7 +162,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	err = executor.SetupSandboxNS(vxlanName, bridgeName, sandboxNS, sandboxLink, ipamResult)
+	err = executor.SetupSandboxNS(vxlanName, bridgeName, sandboxNS, sandboxLinkName, ipamResult)
 	if err != nil {
 		return fmt.Errorf("configuring sandbox namespace: %s", err)
 	}

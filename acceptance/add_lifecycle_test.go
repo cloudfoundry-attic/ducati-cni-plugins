@@ -474,7 +474,7 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(exec.Command("ip", "netns", "del", "some-namespace").Run()).To(Succeed())
 			})
 
-			It("returns with an error", func() {
+			It("returns with a meaningful error", func() {
 				var err error
 				var cmd *exec.Cmd
 				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
@@ -483,7 +483,7 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 
-				Expect(session.Out.Contents()).To(ContainSubstring("could not create veth pair"))
+				Expect(session.Out.Contents()).To(ContainSubstring("container namespace setup failed: failed to create veth pair"))
 			})
 		})
 
