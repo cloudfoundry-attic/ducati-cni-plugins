@@ -12,13 +12,12 @@ import (
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-daemon/client"
-	exec "github.com/cloudfoundry-incubator/ducati-daemon/executor"
-	"github.com/cloudfoundry-incubator/ducati-daemon/lib/executor"
+	"github.com/cloudfoundry-incubator/ducati-daemon/container"
+	"github.com/cloudfoundry-incubator/ducati-daemon/executor"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/ip"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/nl"
-	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	"github.com/vishvananda/netlink"
 )
 
@@ -136,14 +135,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 	routeManager := &ip.RouteManager{Netlinker: nl.Netlink}
 	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
+	executor := executor.New(addressManager, routeManager, linkFactory)
 
-	containerNS := namespace.NewNamespace(args.Netns)
-
-	commandExecutor := exec.New(addressManager, routeManager, linkFactory)
-
-	executor := executor.Executor{
-		Executor:    commandExecutor,
-		LinkFactory: linkFactory,
+	creator := container.Creator{
+		LinkFinder: linkFactory,
+		Executor:   executor,
 	}
 
 	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
@@ -151,26 +147,17 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	sandboxLinkName, containerMAC, err := executor.SetupContainerNS(sandboxNS.Path(), containerNS.Path(), args.ContainerID, args.IfName, ipamResult)
+	container, err := creator.Setup(container.CreatorConfig{
+		BridgeName:      fmt.Sprintf("vxlanbr%d", vni),
+		SandboxNsPath:   sandboxNS.Path(),
+		ContainerNsPath: args.Netns,
+		ContainerID:     args.ContainerID,
+		InterfaceName:   args.IfName,
+		VNI:             vni,
+		IPAMResult:      ipamResult,
+	})
 	if err != nil {
 		return err
-	}
-
-	bridgeName := fmt.Sprintf("vxlanbr%d", vni)
-	vxlanName, err := executor.EnsureVxlanDeviceExists(vni, sandboxNS)
-	if err != nil {
-		return err
-	}
-
-	err = executor.SetupSandboxNS(vxlanName, bridgeName, sandboxNS, sandboxLinkName, ipamResult)
-	if err != nil {
-		return fmt.Errorf("configuring sandbox namespace: %s", err)
-	}
-
-	container := models.Container{
-		ID:  args.ContainerID,
-		MAC: containerMAC,
-		IP:  ipamResult.IP4.IP.IP.String(),
 	}
 
 	container.HostIP, err = getHostIP()

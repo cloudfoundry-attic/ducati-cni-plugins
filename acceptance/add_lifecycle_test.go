@@ -483,7 +483,7 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 
-				Expect(session.Out.Contents()).To(ContainSubstring("container namespace setup failed: failed to create veth pair"))
+				Expect(session.Out.Contents()).To(ContainSubstring("failed to create veth pair"))
 			})
 		})
 
