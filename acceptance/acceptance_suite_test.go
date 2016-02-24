@@ -42,11 +42,10 @@ var _ = SynchronizedBeforeSuite(
 		err := cmd.Run()
 		Expect(err).NotTo(HaveOccurred())
 
-		// race detector doesn't work with cgo in go 1.5
-		vxlan, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/cmd/vxlan")
+		vxlan, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/cmd/vxlan", "-race")
 		Expect(err).NotTo(HaveOccurred())
 
-		fakeIpam, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/fake_plugins")
+		fakeIpam, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/fake_plugins", "-race")
 		Expect(err).NotTo(HaveOccurred())
 
 		result, err := json.Marshal(paths{

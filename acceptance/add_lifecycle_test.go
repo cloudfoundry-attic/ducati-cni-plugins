@@ -268,7 +268,7 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
-				Eventually(session).Should(gexec.Exit(0))
+				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
 				var result types.Result
 				err = json.Unmarshal(session.Out.Contents(), &result)
