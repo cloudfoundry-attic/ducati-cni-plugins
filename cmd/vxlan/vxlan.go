@@ -126,9 +126,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("loading config: %s", err)
 	}
 
-	sandboxNS, err := getSandboxNS(fmt.Sprintf("vni-%d", vni))
+	sandboxRepo, err := getSandboxRepo()
 	if err != nil {
-		return fmt.Errorf("getting vxlan sandbox: %s", err)
+		return err
 	}
 
 	addressManager := &ip.AddressManager{Netlinker: nl.Netlink}
@@ -138,8 +138,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 	executor := executor.New(addressManager, routeManager, linkFactory)
 
 	creator := container.Creator{
-		LinkFinder: linkFactory,
-		Executor:   executor,
+		LinkFinder:  linkFactory,
+		Executor:    executor,
+		SandboxRepo: sandboxRepo,
 	}
 
 	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
@@ -149,7 +150,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	container, err := creator.Setup(container.CreatorConfig{
 		BridgeName:      fmt.Sprintf("vxlanbr%d", vni),
-		SandboxNsPath:   sandboxNS.Path(),
 		ContainerNsPath: args.Netns,
 		ContainerID:     args.ContainerID,
 		InterfaceName:   args.IfName,
