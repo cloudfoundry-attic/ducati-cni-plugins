@@ -12,12 +12,10 @@ import (
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-daemon/client"
-	"github.com/cloudfoundry-incubator/ducati-daemon/container"
-	"github.com/cloudfoundry-incubator/ducati-daemon/executor"
-	"github.com/cloudfoundry-incubator/ducati-daemon/lib/ip"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/nl"
+	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 	"github.com/vishvananda/netlink"
 )
 
@@ -126,48 +124,28 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("loading config: %s", err)
 	}
 
-	sandboxRepo, err := getSandboxRepo()
-	if err != nil {
-		return err
-	}
-
-	addressManager := &ip.AddressManager{Netlinker: nl.Netlink}
-	routeManager := &ip.RouteManager{Netlinker: nl.Netlink}
-	linkFactory := &links.Factory{Netlinker: nl.Netlink}
 	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
-	executor := executor.New(addressManager, routeManager, linkFactory)
-
-	creator := container.Creator{
-		LinkFinder:  linkFactory,
-		Executor:    executor,
-		SandboxRepo: sandboxRepo,
-	}
 
 	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
 	if err != nil {
 		return err
 	}
 
-	container, err := creator.Setup(container.CreatorConfig{
-		BridgeName:      fmt.Sprintf("vxlanbr%d", vni),
-		ContainerNsPath: args.Netns,
-		ContainerID:     args.ContainerID,
-		InterfaceName:   args.IfName,
-		VNI:             vni,
-		IPAMResult:      ipamResult,
-	})
-	if err != nil {
-		return err
-	}
-
-	container.HostIP, err = getHostIP()
+	hostip, err := getHostIP()
 	if err != nil {
 		return fmt.Errorf("getting host IP:", err)
 	}
 
-	err = daemonClient.SaveContainer(container)
+	err = daemonClient.ContainerUp(netConf.NetworkID, args.ContainerID, models.NetworksSetupContainerPayload{
+		Args:               args.Args,
+		ContainerNamespace: args.Netns,
+		InterfaceName:      args.IfName,
+		VNI:                vni,
+		HostIP:             hostip,
+		IPAM:               ipamResult,
+	})
 	if err != nil {
-		return fmt.Errorf("saving container data to store: %s", err)
+		return err
 	}
 
 	return ipamResult.Print()

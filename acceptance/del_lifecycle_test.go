@@ -21,7 +21,7 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-var _ = Describe("VXLAN DEL", func() {
+var _ = PDescribe("VXLAN DEL", func() {
 	var (
 		netConfig Config
 		session   *gexec.Session
