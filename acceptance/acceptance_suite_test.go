@@ -77,22 +77,6 @@ var _ = SynchronizedAfterSuite(func() {
 	gexec.CleanupBuildArtifacts()
 })
 
-func newNetworkNamespace(name string) string {
-	namespace := "/var/run/netns/" + name
-	cmd := exec.Command("ip", "netns", "add", name)
-	err := cmd.Run()
-	Expect(err).NotTo(HaveOccurred())
-
-	Expect(namespace).To(BeAnExistingFile())
-	return namespace
-}
-
-func removeNetworkNamespace(name string) {
-	cmd := exec.Command("ip", "netns", "delete", name)
-	err := cmd.Run()
-	Expect(err).NotTo(HaveOccurred())
-}
-
 func buildCNICmd(
 	operation string,
 	netConfig Config,
@@ -119,6 +103,33 @@ func buildCNICmd(
 	)
 
 	sandboxNamespace := namespace.NewNamespace(filepath.Join(sandboxRepoDir, fmt.Sprintf("vni-%d", vni)))
-
 	return sandboxNamespace, cmd, nil
+}
+
+// TODO: make this the only one, once we move over DEL
+func buildCNICmdLight(
+	operation string,
+	netConfig Config,
+	containerNSPath string,
+	containerID, sandboxRepoDir, serverURL string,
+) (*exec.Cmd, error) {
+
+	input, err := json.Marshal(netConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(pathToVxlan)
+	cmd.Stdin = bytes.NewReader(input)
+	cmd.Env = append(
+		os.Environ(),
+		fmt.Sprintf("CNI_COMMAND=%s", operation),
+		fmt.Sprintf("CNI_CONTAINERID=%s", containerID),
+		fmt.Sprintf("CNI_PATH=%s", cniPath),
+		fmt.Sprintf("CNI_NETNS=%s", containerNSPath),
+		fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
+		fmt.Sprintf("DAEMON_BASE_URL=%s", serverURL),
+	)
+
+	return cmd, nil
 }

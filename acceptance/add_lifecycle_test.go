@@ -7,16 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 
-	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/appc/cni/pkg/types"
 	"github.com/onsi/gomega/gexec"
 	"github.com/onsi/gomega/ghttp"
-	"github.com/vishvananda/netlink"
 )
 
 type IPAM struct {
@@ -40,13 +37,12 @@ var _ = Describe("VXLAN ADD", func() {
 		session   *gexec.Session
 		server    *ghttp.Server
 
-		repoDir       string
-		containerID   string
-		serverURL     string
-		containerNS   namespace.Namespace
-		sandboxNS     namespace.Namespace
-		namespaceRepo namespace.Repository
-		reqBytes      []byte
+		repoDir     string
+		containerID string
+		serverURL   string
+		reqBytes    []byte
+
+		containerNSPath string
 
 		ipamResult types.Result
 
@@ -58,16 +54,8 @@ var _ = Describe("VXLAN ADD", func() {
 		repoDir, err = ioutil.TempDir("", "vxlan")
 		Expect(err).NotTo(HaveOccurred())
 
-		namespaceRepo, err = namespace.NewRepository(repoDir)
-		Expect(err).NotTo(HaveOccurred())
-
-		containerNS, err = namespaceRepo.Create("container-ns")
-		Expect(err).NotTo(HaveOccurred())
-
-		sandboxRepoDir, err = ioutil.TempDir("", "sandbox")
-		Expect(err).NotTo(HaveOccurred())
-
 		containerID = "guid-1"
+		containerNSPath = "/some/container/namespace/path"
 
 		netConfig = Config{
 			Name:      "test-network",
@@ -117,17 +105,15 @@ var _ = Describe("VXLAN ADD", func() {
 	})
 
 	AfterEach(func() {
-		containerNS.Destroy()
-		sandboxNS.Destroy()
 		os.RemoveAll(repoDir)
 		server.Close()
 	})
 
-	PDescribe("ADD", func() {
+	Describe("ADD", func() {
 		It("returns IPAM data", func() {
 			var err error
 			var cmd *exec.Cmd
-			sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+			cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
 			Expect(err).NotTo(HaveOccurred())
 			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred())
@@ -140,19 +126,6 @@ var _ = Describe("VXLAN ADD", func() {
 			Expect(result.IP4.Gateway.String()).To(Equal("192.168.1.1"))
 			Expect(result.IP4.Routes).To(HaveLen(1))
 			Expect(result.IP4.Routes[0].Dst.String()).To(Equal("192.168.0.0/16"))
-
-			err = containerNS.Execute(func(_ *os.File) error {
-				l, err := netlink.LinkByName("vx-eth0")
-				Expect(err).NotTo(HaveOccurred())
-
-				addrs, err := netlink.AddrList(l, netlink.FAMILY_V4)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(addrs).To(HaveLen(1))
-				Expect(addrs[0].IPNet.IP.String()).To(Equal(result.IP4.IP.IP.String()))
-
-				return nil
-			})
-			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("when the call to allocate an IP fails", func() {
@@ -163,7 +136,7 @@ var _ = Describe("VXLAN ADD", func() {
 			It("returns an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
@@ -176,20 +149,20 @@ var _ = Describe("VXLAN ADD", func() {
 
 		Context("when the call to the daemon to register the container fails", func() {
 			BeforeEach(func() {
-				server.RouteToHandler("POST", "/containers", ghttp.RespondWith(http.StatusInternalServerError, nil))
+				server.RouteToHandler("POST", "/networks/some-network-id/guid-1", ghttp.RespondWith(http.StatusInternalServerError, nil))
 			})
 
 			It("returns an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 
 				Expect(server.ReceivedRequests()).To(HaveLen(2))
-				Expect(session.Out.Contents()).To(ContainSubstring("saving container data to store"))
+				Expect(session.Out.Contents()).To(ContainSubstring("unexpected status code on ContainerUp: expected 201 but got 500"))
 			})
 		})
 
@@ -201,7 +174,7 @@ var _ = Describe("VXLAN ADD", func() {
 			It("exits with an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
@@ -211,107 +184,23 @@ var _ = Describe("VXLAN ADD", func() {
 			})
 		})
 
-		Context("when DUCATI_OS_SANDBOX_REPO is not set", func() {
+		Context("when DAEMON_BASE_URL is not set", func() {
 			BeforeEach(func() {
-				sandboxRepoDir = ""
+				serverURL = ""
 			})
 
 			It("exits with an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 
-				Expect(session.Out.Contents()).To(ContainSubstring("DUCATI_OS_SANDBOX_REPO is required"))
+				Expect(session.Out.Contents()).To(ContainSubstring("missing required env var 'DAEMON_BASE_URL'"))
 			})
 		})
 
-		Context("when creating the sandbox repo fails", func() {
-			BeforeEach(func() {
-				f, err := ioutil.TempFile("", "sandbox-repo")
-				Expect(err).NotTo(HaveOccurred())
-
-				sandboxRepoDir = f.Name()
-				f.Close()
-			})
-
-			It("exits with an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(session.Out.Contents()).To(ContainSubstring("failed to create sandbox repository"))
-			})
-		})
-
-		Context("when the container namespace cannot be opened", func() {
-			BeforeEach(func() {
-				tempDir, err := ioutil.TempDir("", "non-existent-namespace")
-				Expect(err).NotTo(HaveOccurred())
-				containerNS = namespace.NewNamespace(filepath.Join(tempDir, "non-existent-ns"))
-			})
-
-			It("exits with an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(session.Out.Contents()).To(ContainSubstring("non-existent-ns"))
-			})
-		})
-
-		Context("when the pair cannot be created", func() {
-			BeforeEach(func() {
-				Expect(exec.Command("ip", "netns", "add", "some-namespace").Run()).To(Succeed())
-				Expect(exec.Command("ip", "netns", "exec", "some-namespace", "ip", "link", "add", containerID, "type", "dummy").Run()).To(Succeed())
-
-				containerNS = namespace.NewNamespace("/var/run/netns/some-namespace")
-			})
-
-			AfterEach(func() {
-				Expect(exec.Command("ip", "netns", "del", "some-namespace").Run()).To(Succeed())
-			})
-
-			It("returns with a meaningful error", func() {
-				var err error
-				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(session.Out.Contents()).To(ContainSubstring("failed to create veth pair"))
-			})
-		})
-
-		Context("When the Bridge cannot be created inside of the sanbox", func() {
-			BeforeEach(func() {
-				ipamResult.IP4.Gateway = net.ParseIP("192.168.1.2")
-			})
-
-			PIt("returns with an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				sandboxNS, cmd, err = buildCNICmd("ADD", netConfig, containerNS, containerID, sandboxRepoDir, serverURL)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(session.Out.Contents()).To(ContainSubstring("configuring sandbox namespace"))
-			})
-		})
 	})
 })
