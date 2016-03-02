@@ -38,6 +38,10 @@ func loadConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf(`"network_id" field is required. It identifies the network.`)
 	}
 
+	if n.DaemonBaseURL == "" {
+		return nil, fmt.Errorf(`"daemon_base_url" field required.`)
+	}
+
 	return n, nil
 }
 
@@ -85,10 +89,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("loading config: %s", err)
 	}
 
-	if netConf.DaemonBaseURL == "" {
-		return fmt.Errorf(`"daemon_base_url" field required.`)
-	}
-
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
 	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
@@ -120,10 +120,6 @@ func cmdDel(args *skel.CmdArgs) error {
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("loading config: %s", err)
-	}
-
-	if netConf.DaemonBaseURL == "" {
-		return fmt.Errorf(`"daemon_base_url" field required.`)
 	}
 
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
