@@ -1,7 +1,6 @@
 package acceptance_test
 
 import (
-	"io/ioutil"
 	"net/http"
 	"os/exec"
 	"regexp"
@@ -18,29 +17,18 @@ var _ = Describe("VXLAN DEL", func() {
 		netConfig Config
 		session   *gexec.Session
 		server    *ghttp.Server
-		serverURL string
 
-		repoDir         string
 		containerID     string
 		containerNSPath string
-
-		sandboxRepoDir string
 	)
 
 	BeforeEach(func() {
-		var err error
-		repoDir, err = ioutil.TempDir("", "vxlan")
-		Expect(err).NotTo(HaveOccurred())
-
-		sandboxRepoDir, err = ioutil.TempDir("", "sandbox")
-		Expect(err).NotTo(HaveOccurred())
-
 		containerNSPath = "/some/container/namespace/path"
 
 		containerID = "guid-1"
 
 		server = ghttp.NewServer()
-		serverURL = server.URL()
+		serverURL := server.URL()
 
 		netConfig = Config{
 			Name:          "test-network",
@@ -67,7 +55,7 @@ var _ = Describe("VXLAN DEL", func() {
 		It("removes the container info from the ducati daemon", func() {
 			var err error
 			var cmd *exec.Cmd
-			cmd, err = buildCNICmdLight("DEL", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+			cmd, err = buildCNICmdLight("DEL", netConfig, containerNSPath, containerID)
 			Expect(err).NotTo(HaveOccurred())
 			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred())
@@ -87,7 +75,7 @@ var _ = Describe("VXLAN DEL", func() {
 				ghttp.RespondWith(http.StatusTeapot, ""),
 			))
 
-			cmd, err = buildCNICmdLight("DEL", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+			cmd, err = buildCNICmdLight("DEL", netConfig, containerNSPath, containerID)
 			Expect(err).NotTo(HaveOccurred())
 			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred())

@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 
 	. "github.com/onsi/ginkgo"
@@ -38,28 +37,20 @@ var _ = Describe("VXLAN ADD", func() {
 		session   *gexec.Session
 		server    *ghttp.Server
 
-		repoDir     string
 		containerID string
-		serverURL   string
 		reqBytes    []byte
 
 		containerNSPath string
 
 		ipamResult types.Result
-
-		sandboxRepoDir string
 	)
 
 	BeforeEach(func() {
-		var err error
-		repoDir, err = ioutil.TempDir("", "vxlan")
-		Expect(err).NotTo(HaveOccurred())
-
 		containerID = "guid-1"
 		containerNSPath = "/some/container/namespace/path"
 
 		server = ghttp.NewServer()
-		serverURL = server.URL()
+		serverURL := server.URL()
 
 		netConfig = Config{
 			Name:          "test-network",
@@ -107,7 +98,6 @@ var _ = Describe("VXLAN ADD", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(repoDir)
 		server.Close()
 	})
 
@@ -115,7 +105,7 @@ var _ = Describe("VXLAN ADD", func() {
 		It("returns IPAM data", func() {
 			var err error
 			var cmd *exec.Cmd
-			cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+			cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
 			Expect(err).NotTo(HaveOccurred())
 			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred())
@@ -138,7 +128,7 @@ var _ = Describe("VXLAN ADD", func() {
 			It("returns an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
@@ -157,7 +147,7 @@ var _ = Describe("VXLAN ADD", func() {
 			It("returns an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
@@ -176,7 +166,7 @@ var _ = Describe("VXLAN ADD", func() {
 			It("exits with an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
@@ -194,7 +184,7 @@ var _ = Describe("VXLAN ADD", func() {
 			It("exits with an error", func() {
 				var err error
 				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID, sandboxRepoDir, serverURL)
+				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
 				Expect(err).NotTo(HaveOccurred())
 				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())

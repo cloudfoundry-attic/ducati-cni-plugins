@@ -80,7 +80,7 @@ func buildCNICmdLight(
 	operation string,
 	netConfig Config,
 	containerNSPath string,
-	containerID, sandboxRepoDir, serverURL string,
+	containerID string,
 ) (*exec.Cmd, error) {
 
 	input, err := json.Marshal(netConfig)
