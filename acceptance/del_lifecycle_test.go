@@ -39,14 +39,15 @@ var _ = Describe("VXLAN DEL", func() {
 
 		containerID = "guid-1"
 
-		netConfig = Config{
-			Name:      "test-network",
-			Type:      "vxlan",
-			NetworkID: "some-network-id",
-		}
-
 		server = ghttp.NewServer()
 		serverURL = server.URL()
+
+		netConfig = Config{
+			Name:          "test-network",
+			Type:          "vxlan",
+			NetworkID:     "some-network-id",
+			DaemonBaseURL: serverURL,
+		}
 
 		server.RouteToHandler("DELETE", regexp.MustCompile("/containers/.*"), func(resp http.ResponseWriter, req *http.Request) {
 			resp.WriteHeader(http.StatusNoContent)

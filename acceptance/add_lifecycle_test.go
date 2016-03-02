@@ -23,9 +23,10 @@ type IPAM struct {
 }
 
 type Config struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	NetworkID string `json:"network_id"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	NetworkID     string `json:"network_id"`
+	DaemonBaseURL string `json:"daemon_base_url"`
 }
 
 const vni = 1
@@ -57,14 +58,15 @@ var _ = Describe("VXLAN ADD", func() {
 		containerID = "guid-1"
 		containerNSPath = "/some/container/namespace/path"
 
-		netConfig = Config{
-			Name:      "test-network",
-			Type:      "vxlan",
-			NetworkID: "some-network-id",
-		}
-
 		server = ghttp.NewServer()
 		serverURL = server.URL()
+
+		netConfig = Config{
+			Name:          "test-network",
+			Type:          "vxlan",
+			NetworkID:     "some-network-id",
+			DaemonBaseURL: serverURL,
+		}
 
 		ipamResult = types.Result{
 			IP4: &types.IPConfig{
@@ -184,9 +186,9 @@ var _ = Describe("VXLAN ADD", func() {
 			})
 		})
 
-		Context("when DAEMON_BASE_URL is not set", func() {
+		Context("when daemon_base_url is not set", func() {
 			BeforeEach(func() {
-				serverURL = ""
+				netConfig.DaemonBaseURL = ""
 			})
 
 			It("exits with an error", func() {
@@ -198,7 +200,7 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 
-				Expect(session.Out.Contents()).To(ContainSubstring("missing required env var 'DAEMON_BASE_URL'"))
+				Expect(session.Out.Contents()).To(ContainSubstring(`\"daemon_base_url\" field required.`))
 			})
 		})
 

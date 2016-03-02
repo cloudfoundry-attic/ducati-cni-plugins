@@ -97,7 +97,6 @@ func buildCNICmdLight(
 		fmt.Sprintf("CNI_PATH=%s", cniPath),
 		fmt.Sprintf("CNI_NETNS=%s", containerNSPath),
 		fmt.Sprintf("CNI_IFNAME=%s", "vx-eth0"),
-		fmt.Sprintf("DAEMON_BASE_URL=%s", serverURL),
 	)
 
 	return cmd, nil

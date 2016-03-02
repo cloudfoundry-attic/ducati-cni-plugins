@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
 
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-daemon/client"
-	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/nl"
 	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 )
@@ -21,7 +19,8 @@ const vni = 1
 
 type NetConf struct {
 	types.NetConf
-	NetworkID string `json:"network_id"`
+	NetworkID     string `json:"network_id"`
+	DaemonBaseURL string `json:"daemon_base_url"`
 }
 
 func init() {
@@ -40,37 +39,6 @@ func loadConf(bytes []byte) (*NetConf, error) {
 	}
 
 	return n, nil
-}
-
-func getSandboxRepo() (namespace.Repository, error) {
-	sandboxRepoDir := os.Getenv("DUCATI_OS_SANDBOX_REPO")
-	if sandboxRepoDir == "" {
-		return nil, errors.New("DUCATI_OS_SANDBOX_REPO is required")
-	}
-
-	sandboxRepo, err := namespace.NewRepository(sandboxRepoDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sandbox repository: %s", err)
-	}
-
-	return sandboxRepo, nil
-}
-
-func getSandboxNS(name string) (namespace.Namespace, error) {
-	sandboxRepo, err := getSandboxRepo()
-	if err != nil {
-		return nil, err
-	}
-
-	sandboxNS, err := sandboxRepo.Get(name)
-	if err != nil {
-		sandboxNS, err = sandboxRepo.Create(name)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	return sandboxNS, nil
 }
 
 func getHostIP() (string, error) {
@@ -108,11 +76,6 @@ func getHostIP() (string, error) {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
-	if daemonBaseURL == "" {
-		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
-	}
-
 	if args.ContainerID == "" {
 		return errors.New("CNI_CONTAINERID is required")
 	}
@@ -122,7 +85,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("loading config: %s", err)
 	}
 
-	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
+	if netConf.DaemonBaseURL == "" {
+		return fmt.Errorf(`"daemon_base_url" field required.`)
+	}
+
+	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
 	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
 	if err != nil {
@@ -150,17 +117,16 @@ func cmdAdd(args *skel.CmdArgs) error {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
-	daemonBaseURL := os.Getenv("DAEMON_BASE_URL")
-	if daemonBaseURL == "" {
-		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
-	}
-
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("loading config: %s", err)
 	}
 
-	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
+	if netConf.DaemonBaseURL == "" {
+		return fmt.Errorf(`"daemon_base_url" field required.`)
+	}
+
+	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
 	err = daemonClient.RemoveContainer(args.ContainerID)
 	if err != nil {
