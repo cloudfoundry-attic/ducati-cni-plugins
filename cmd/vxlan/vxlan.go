@@ -12,11 +12,9 @@ import (
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
 	"github.com/cloudfoundry-incubator/ducati-daemon/client"
-	"github.com/cloudfoundry-incubator/ducati-daemon/lib/links"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/namespace"
 	"github.com/cloudfoundry-incubator/ducati-daemon/lib/nl"
 	"github.com/cloudfoundry-incubator/ducati-daemon/models"
-	"github.com/vishvananda/netlink"
 )
 
 const vni = 1
@@ -157,53 +155,25 @@ func cmdDel(args *skel.CmdArgs) error {
 		return fmt.Errorf("missing required env var 'DAEMON_BASE_URL'")
 	}
 
+	netConf, err := loadConf(args.StdinData)
+	if err != nil {
+		return fmt.Errorf("loading config: %s", err)
+	}
+
 	daemonClient := client.New(daemonBaseURL, http.DefaultClient)
 
-	err := daemonClient.RemoveContainer(args.ContainerID)
+	err = daemonClient.RemoveContainer(args.ContainerID)
 	if err != nil {
 		return fmt.Errorf("removing container data to store: %s", err)
 	}
 
-	linkFactory := &links.Factory{Netlinker: nl.Netlink}
-	containerNS := namespace.NewNamespace(args.Netns)
-
-	err = containerNS.Execute(func(ns *os.File) error {
-		linkFactory.DeleteLinkByName(args.IfName)
-		return nil
+	err = daemonClient.ContainerDown(netConf.NetworkID, args.ContainerID, models.NetworksDeleteContainerPayload{
+		ContainerNamespace: args.Netns,
+		InterfaceName:      args.IfName,
+		VNI:                vni,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to delete link in container namespace: %s", err)
-	}
-
-	sandboxRepo, err := getSandboxRepo()
-	if err != nil {
-		return fmt.Errorf("failed to open sandbox repository: %s", err)
-	}
-
-	sandboxNS, err := sandboxRepo.Get(fmt.Sprintf("vni-%d", vni))
-	if err != nil {
-		return fmt.Errorf("failed to get sandbox namespace: %s", err)
-	}
-
-	var sandboxLinks []netlink.Link
-	err = sandboxNS.Execute(func(ns *os.File) error {
-		var err error
-		sandboxLinks, err = linkFactory.ListLinks()
 		return err
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get sandbox links: %s", err)
-	}
-
-	for _, link := range sandboxLinks {
-		if _, ok := link.(*netlink.Veth); ok {
-			return nil // we still have a container attached
-		}
-	}
-
-	err = sandboxNS.Destroy()
-	if err != nil {
-		return fmt.Errorf("failed to destroy sandbox namespace: %s", err)
 	}
 
 	return nil
