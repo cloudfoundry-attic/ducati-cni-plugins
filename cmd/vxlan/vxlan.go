@@ -124,11 +124,6 @@ func cmdDel(args *skel.CmdArgs) error {
 
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
-	err = daemonClient.RemoveContainer(args.ContainerID)
-	if err != nil {
-		return fmt.Errorf("removing container data to store: %s", err)
-	}
-
 	err = daemonClient.ContainerDown(netConf.NetworkID, args.ContainerID, models.NetworksDeleteContainerPayload{
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
