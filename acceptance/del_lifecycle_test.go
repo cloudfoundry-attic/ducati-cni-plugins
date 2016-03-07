@@ -3,7 +3,6 @@ package acceptance_test
 import (
 	"net/http"
 	"os/exec"
-	"regexp"
 
 	"github.com/onsi/gomega/gexec"
 	"github.com/onsi/gomega/ghttp"
@@ -37,10 +36,6 @@ var _ = Describe("VXLAN DEL", func() {
 			DaemonBaseURL: serverURL,
 		}
 
-		server.RouteToHandler("DELETE", regexp.MustCompile("/containers/.*"), func(resp http.ResponseWriter, req *http.Request) {
-			resp.WriteHeader(http.StatusNoContent)
-		})
-
 		server.RouteToHandler("DELETE", "/networks/some-network-id/guid-1", ghttp.CombineHandlers(
 			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
 			ghttp.RespondWith(http.StatusNoContent, ""),
@@ -61,7 +56,7 @@ var _ = Describe("VXLAN DEL", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(0))
 
-			Expect(server.ReceivedRequests()).Should(HaveLen(2))
+			Expect(server.ReceivedRequests()).Should(HaveLen(1))
 		})
 	})
 
