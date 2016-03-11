@@ -91,23 +91,17 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
-	ipamResult, err := daemonClient.AllocateIP(netConf.NetworkID, args.ContainerID)
-	if err != nil {
-		return err
-	}
-
 	hostip, err := getHostIP()
 	if err != nil {
 		return fmt.Errorf("getting host IP:", err)
 	}
 
-	err = daemonClient.ContainerUp(netConf.NetworkID, args.ContainerID, models.NetworksSetupContainerPayload{
+	ipamResult, err := daemonClient.ContainerUp(netConf.NetworkID, args.ContainerID, models.NetworksSetupContainerPayload{
 		Args:               args.Args,
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
 		VNI:                vni,
 		HostIP:             hostip,
-		IPAM:               ipamResult,
 	})
 	if err != nil {
 		return err

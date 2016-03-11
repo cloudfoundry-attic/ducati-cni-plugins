@@ -76,14 +76,6 @@ var _ = Describe("VXLAN ADD", func() {
 			},
 		}
 
-		ipamStatusCode := http.StatusCreated
-		ipamPostHandler := ghttp.CombineHandlers(
-			ghttp.VerifyRequest("POST", "/ipam/some-network-id/guid-1"),
-			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
-			ghttp.RespondWithJSONEncodedPtr(&ipamStatusCode, &ipamResult),
-		)
-
-		server.RouteToHandler("POST", "/ipam/some-network-id/guid-1", ipamPostHandler)
 		server.RouteToHandler("POST", "/containers", func(resp http.ResponseWriter, req *http.Request) {
 			var err error
 			reqBytes, err = ioutil.ReadAll(req.Body)
@@ -91,9 +83,10 @@ var _ = Describe("VXLAN ADD", func() {
 			resp.WriteHeader(http.StatusCreated)
 		})
 
+		statusCode := http.StatusCreated
 		server.RouteToHandler("POST", "/networks/some-network-id/guid-1", ghttp.CombineHandlers(
 			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
-			ghttp.RespondWith(http.StatusCreated, ""),
+			ghttp.RespondWithJSONEncodedPtr(&statusCode, &ipamResult),
 		))
 	})
 
@@ -120,25 +113,6 @@ var _ = Describe("VXLAN ADD", func() {
 			Expect(result.IP4.Routes[0].Dst.String()).To(Equal("192.168.0.0/16"))
 		})
 
-		Context("when the call to allocate an IP fails", func() {
-			BeforeEach(func() {
-				server.RouteToHandler("POST", "/ipam/some-network-id/guid-1", ghttp.RespondWith(http.StatusInternalServerError, nil))
-			})
-
-			It("returns an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(server.ReceivedRequests()).To(HaveLen(1))
-				Expect(session.Out.Contents()).To(ContainSubstring("unexpected status code on AllocateIP"))
-			})
-		})
-
 		Context("when the call to the daemon to register the container fails", func() {
 			BeforeEach(func() {
 				server.RouteToHandler("POST", "/networks/some-network-id/guid-1", ghttp.RespondWith(http.StatusInternalServerError, nil))
@@ -153,7 +127,7 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
 
-				Expect(server.ReceivedRequests()).To(HaveLen(2))
+				Expect(server.ReceivedRequests()).To(HaveLen(1))
 				Expect(session.Out.Contents()).To(ContainSubstring("unexpected status code on ContainerUp: expected 201 but got 500"))
 			})
 		})
