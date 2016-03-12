@@ -2,7 +2,6 @@ package acceptance_test
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os/exec"
@@ -38,7 +37,6 @@ var _ = Describe("VXLAN ADD", func() {
 		server    *ghttp.Server
 
 		containerID string
-		reqBytes    []byte
 
 		containerNSPath string
 
@@ -75,13 +73,6 @@ var _ = Describe("VXLAN ADD", func() {
 				}},
 			},
 		}
-
-		server.RouteToHandler("POST", "/containers", func(resp http.ResponseWriter, req *http.Request) {
-			var err error
-			reqBytes, err = ioutil.ReadAll(req.Body)
-			Expect(err).NotTo(HaveOccurred())
-			resp.WriteHeader(http.StatusCreated)
-		})
 
 		statusCode := http.StatusCreated
 		server.RouteToHandler("POST", "/networks/some-network-id/guid-1", ghttp.CombineHandlers(
