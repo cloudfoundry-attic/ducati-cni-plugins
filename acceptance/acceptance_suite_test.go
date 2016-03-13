@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -24,33 +23,16 @@ func TestVxlan(t *testing.T) {
 var pathToVxlan, cniPath string
 
 type paths struct {
-	VXLAN    string `json:"vxlan"`
-	CNI      string `json:"cni"`
-	FAKEIPAM string `json:"fake_ipam"`
+	VXLAN string `json:"vxlan"`
 }
 
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
-		if runtime.GOOS != "linux" {
-			Skip("Cannot run suite for non linux platform: " + runtime.GOOS)
-		}
-
-		cniDir := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "appc", "cni")
-		cmd := exec.Command("/bin/sh", filepath.Join(cniDir, "build"))
-		cmd.Dir = cniDir
-		err := cmd.Run()
-		Expect(err).NotTo(HaveOccurred())
-
 		vxlan, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/cmd/vxlan", "-race")
 		Expect(err).NotTo(HaveOccurred())
 
-		fakeIpam, err := gexec.Build("github.com/cloudfoundry-incubator/ducati-cni-plugins/fake_plugins", "-race")
-		Expect(err).NotTo(HaveOccurred())
-
 		result, err := json.Marshal(paths{
-			VXLAN:    vxlan,
-			CNI:      cniDir,
-			FAKEIPAM: fakeIpam,
+			VXLAN: vxlan,
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -61,11 +43,7 @@ var _ = SynchronizedBeforeSuite(
 		err := json.Unmarshal(result, &paths)
 		Expect(err).NotTo(HaveOccurred())
 
-		cniBinDir := filepath.Join(paths.CNI, "bin")
-		vxlanBinDir := filepath.Dir(paths.VXLAN)
-		fakeIpamDir := filepath.Dir(paths.FAKEIPAM)
-
-		cniPath = fmt.Sprintf("%s%c%s%c%s", vxlanBinDir, os.PathListSeparator, cniBinDir, os.PathListSeparator, fakeIpamDir)
+		cniPath = filepath.Dir(paths.VXLAN)
 		pathToVxlan = paths.VXLAN
 	},
 )
