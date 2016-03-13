@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"runtime"
 
 	"github.com/appc/cni/pkg/skel"
 	"github.com/appc/cni/pkg/types"
@@ -17,10 +16,6 @@ type NetConf struct {
 	types.NetConf
 	NetworkID     string `json:"network_id"`
 	DaemonBaseURL string `json:"daemon_base_url"`
-}
-
-func init() {
-	runtime.LockOSThread()
 }
 
 func loadConf(bytes []byte) (*NetConf, error) {
