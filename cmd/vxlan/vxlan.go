@@ -13,8 +13,6 @@ import (
 	"github.com/cloudfoundry-incubator/ducati-daemon/models"
 )
 
-const vni = 1
-
 type NetConf struct {
 	types.NetConf
 	NetworkID     string `json:"network_id"`
@@ -59,7 +57,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		Args:               args.Args,
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
-		VNI:                vni,
 	})
 	if err != nil {
 		return err
@@ -79,7 +76,6 @@ func cmdDel(args *skel.CmdArgs) error {
 	err = daemonClient.ContainerDown(netConf.NetworkID, args.ContainerID, models.NetworksDeleteContainerPayload{
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
-		VNI:                vni,
 	})
 	if err != nil {
 		return err

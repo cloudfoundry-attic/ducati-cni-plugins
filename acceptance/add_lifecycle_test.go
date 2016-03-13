@@ -27,7 +27,6 @@ type Config struct {
 	DaemonBaseURL string `json:"daemon_base_url"`
 }
 
-const vni = 1
 const DEFAULT_TIMEOUT = "3s"
 
 var _ = Describe("VXLAN ADD", func() {
