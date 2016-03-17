@@ -36,7 +36,7 @@ var _ = Describe("VXLAN DEL", func() {
 			DaemonBaseURL: serverURL,
 		}
 
-		server.RouteToHandler("DELETE", "/networks/some-network-id/guid-1", ghttp.CombineHandlers(
+		server.RouteToHandler("POST", "/cni/del", ghttp.CombineHandlers(
 			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
 			ghttp.RespondWith(http.StatusNoContent, ""),
 		))
@@ -65,7 +65,7 @@ var _ = Describe("VXLAN DEL", func() {
 			var err error
 			var cmd *exec.Cmd
 
-			server.RouteToHandler("DELETE", "/networks/some-network-id/guid-1", ghttp.CombineHandlers(
+			server.RouteToHandler("POST", "/cni/del", ghttp.CombineHandlers(
 				ghttp.VerifyHeaderKV("Content-Type", "application/json"),
 				ghttp.RespondWith(http.StatusTeapot, ""),
 			))

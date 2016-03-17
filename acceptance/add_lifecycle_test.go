@@ -74,7 +74,7 @@ var _ = Describe("VXLAN ADD", func() {
 		}
 
 		statusCode := http.StatusCreated
-		server.RouteToHandler("POST", "/networks/some-network-id/guid-1", ghttp.CombineHandlers(
+		server.RouteToHandler("POST", "/cni/add", ghttp.CombineHandlers(
 			ghttp.VerifyHeaderKV("Content-Type", "application/json"),
 			ghttp.RespondWithJSONEncodedPtr(&statusCode, &ipamResult),
 		))
@@ -105,7 +105,7 @@ var _ = Describe("VXLAN ADD", func() {
 
 		Context("when the call to the daemon to register the container fails", func() {
 			BeforeEach(func() {
-				server.RouteToHandler("POST", "/networks/some-network-id/guid-1", ghttp.RespondWith(http.StatusInternalServerError, nil))
+				server.RouteToHandler("POST", "/cni/add", ghttp.RespondWith(http.StatusInternalServerError, nil))
 			})
 
 			It("returns an error", func() {
