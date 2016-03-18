@@ -25,10 +25,6 @@ func loadConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf("failed to load netconf: %v", err)
 	}
 
-	if n.NetworkID == "" {
-		return nil, fmt.Errorf(`"network_id" field is required. It identifies the network.`)
-	}
-
 	if n.DaemonBaseURL == "" {
 		return nil, fmt.Errorf(`"daemon_base_url" field required.`)
 	}
@@ -44,6 +40,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 	netConf, err := loadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("loading config: %s", err)
+	}
+
+	if netConf.NetworkID == "" {
+		return fmt.Errorf(`loading config: "network_id" field required.`)
 	}
 
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
@@ -73,7 +73,6 @@ func cmdDel(args *skel.CmdArgs) error {
 	err = daemonClient.ContainerDown(models.NetworksDeleteContainerPayload{
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
-		NetworkID:          netConf.NetworkID,
 		ContainerID:        args.ContainerID,
 	})
 	if err != nil {
