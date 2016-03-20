@@ -122,24 +122,6 @@ var _ = Describe("VXLAN ADD", func() {
 			})
 		})
 
-		Context("when CNI_CONTAINERID is not set", func() {
-			BeforeEach(func() {
-				containerID = ""
-			})
-
-			It("exits with an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(session.Out.Contents()).To(ContainSubstring("CNI_CONTAINERID is required"))
-			})
-		})
-
 		Context("when daemon_base_url is not set", func() {
 			BeforeEach(func() {
 				netConfig.DaemonBaseURL = ""
@@ -175,6 +157,5 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(session.Out.Contents()).To(ContainSubstring(`\"network_id\" field required.`))
 			})
 		})
-
 	})
 })
