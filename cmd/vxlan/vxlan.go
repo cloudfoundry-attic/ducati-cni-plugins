@@ -48,7 +48,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
-	ipamResult, err := daemonClient.ContainerUp(models.NetworksSetupContainerPayload{
+	ipamResult, err := daemonClient.ContainerUp(models.CNIAddPayload{
 		Args:               args.Args,
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
@@ -70,7 +70,7 @@ func cmdDel(args *skel.CmdArgs) error {
 
 	daemonClient := client.New(netConf.DaemonBaseURL, http.DefaultClient)
 
-	err = daemonClient.ContainerDown(models.NetworksDeleteContainerPayload{
+	err = daemonClient.ContainerDown(models.CNIDelPayload{
 		ContainerNamespace: args.Netns,
 		InterfaceName:      args.IfName,
 		ContainerID:        args.ContainerID,
