@@ -139,23 +139,5 @@ var _ = Describe("VXLAN ADD", func() {
 				Expect(session.Out.Contents()).To(ContainSubstring(`\"daemon_base_url\" field required.`))
 			})
 		})
-
-		Context("when the network_id is missing", func() {
-			BeforeEach(func() {
-				netConfig.NetworkID = ""
-			})
-
-			It("exits with an error", func() {
-				var err error
-				var cmd *exec.Cmd
-				cmd, err = buildCNICmdLight("ADD", netConfig, containerNSPath, containerID)
-				Expect(err).NotTo(HaveOccurred())
-				session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(session, DEFAULT_TIMEOUT).Should(gexec.Exit(1))
-
-				Expect(session.Out.Contents()).To(ContainSubstring(`\"network_id\" field required.`))
-			})
-		})
 	})
 })
