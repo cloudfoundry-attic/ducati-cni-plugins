@@ -32,7 +32,7 @@ var _ = Describe("VXLAN DEL", func() {
 		netConfig = Config{
 			Name:          "test-network",
 			Type:          "vxlan",
-			NetworkID:     "", // this is normally not present on delete
+			Network:       Network{""}, // this is normally not present on delete
 			DaemonBaseURL: serverURL,
 		}
 

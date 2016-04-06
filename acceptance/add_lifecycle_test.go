@@ -20,11 +20,15 @@ type IPAM struct {
 	Routes []map[string]string `json:"routes,omitempty"`
 }
 
+type Network struct {
+	ID string
+}
+
 type Config struct {
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	NetworkID     string `json:"network_id"`
-	DaemonBaseURL string `json:"daemon_base_url"`
+	Name          string  `json:"name"`
+	Type          string  `json:"type"`
+	Network       Network `json:"network"`
+	DaemonBaseURL string  `json:"daemon_base_url"`
 }
 
 const DEFAULT_TIMEOUT = "3s"
@@ -49,10 +53,14 @@ var _ = Describe("VXLAN ADD", func() {
 		server = ghttp.NewServer()
 		serverURL := server.URL()
 
+		network := Network{
+			ID: "some-network-id",
+		}
+
 		netConfig = Config{
 			Name:          "test-network",
 			Type:          "vxlan",
-			NetworkID:     "some-network-id",
+			Network:       network,
 			DaemonBaseURL: serverURL,
 		}
 
